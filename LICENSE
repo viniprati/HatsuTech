@@ -1,0 +1,199 @@
+Hatsutech Source-Available License
+
+Copyright (c) 2026 Vinicius Prati Machado.
+All rights reserved.
+
+1. Ownership
+
+This repository, including its source code, structure, assets, documentation,
+configuration, scripts, command flows, database models, texts and related
+materials, is owned by Vinicius Prati Machado unless another owner is explicitly
+identified in a specific file.
+
+No ownership, copyright, trademark, database right, trade secret or other
+intellectual property right is transferred by making this repository publicly
+visible.
+
+2. Source-Available Status
+
+This repository is source-available for reading, security review, educational
+reference and permission evaluation only.
+
+This is not an open-source license. It does not grant the permissions normally
+associated with open-source licenses such as MIT, Apache, BSD, GPL, LGPL, MPL or
+similar licenses.
+
+3. No Automatic Permission To Use
+
+Unless you have prior written authorization from the copyright holder, you may
+not:
+
+- use this software or any substantial part of it;
+- copy, reproduce, publish, upload or redistribute it;
+- modify, adapt, translate or create derivative works from it;
+- host, deploy, run, operate or provide the bot or related services;
+- sublicense, rent, lease, lend, sell, resell or commercialize it;
+- remove copyright, attribution, license or ownership notices;
+- use the code, architecture, command flows, database schema or texts to build a
+  competing or derivative bot, service, product or integration;
+- extract, scrape or reuse private operational logic, command designs, economy
+  rules, VIP flows, moderation flows or other project-specific systems outside
+  the limited reading and review purpose stated in this license.
+
+4. Permission Requests
+
+If you want to use, copy, modify, host, distribute, fork for reuse, integrate or
+derive any work from this repository, you must request and receive prior written
+authorization from Vinicius Prati Machado.
+
+Permission requests may be sent by email to prativinicius@gmail.com or through
+Discord at https://discord.com/users/983870132063453235.
+
+Permission may be granted, denied, limited, revoked or conditioned at the sole
+discretion of the copyright holder. Any authorization must be explicit and in
+writing. Silence, public visibility, issue comments, stars, forks or informal
+access to the repository do not create permission to use the software.
+
+5. Authorized Use
+
+If written permission is granted, you must comply with all conditions included
+in that authorization and, unless expressly waived in writing, you must:
+
+- preserve this license and copyright notice;
+- preserve attribution requested by the copyright holder;
+- use your own tokens, credentials, database, hosting, assets and configuration;
+- not represent your deployment as official unless expressly authorized;
+- not imply endorsement, partnership or affiliation with Animes Cafe, Hatsutech
+  or Vinicius Prati Machado without express authorization;
+- follow all applicable laws, Discord rules and platform requirements.
+
+6. Terms Of Use And Privacy Policy
+
+The official Hatsutech bot/service is governed by its own user-facing terms and
+privacy policy:
+
+- Terms of Service:
+  https://viniprati.github.io/Hatsutech-Termos-de-Uso/
+- Privacy Policy:
+  https://viniprati.github.io/Hatsutech-Politica-de-Privacidade/
+
+These documents explain the rules for using the Hatsutech bot/service and how
+the official service handles data in the Animes Cafe environment.
+
+This license governs access to and permission to use this repository's source
+code. It does not replace, amend or override the official Terms of Service or
+Privacy Policy for the Hatsutech bot/service.
+
+Anyone who receives written permission to operate, deploy or adapt this software
+must provide their own applicable terms of use and privacy policy unless the
+written authorization expressly says otherwise. You may not claim that your
+deployment is covered by the official Hatsutech/Animes Cafe terms or privacy
+policy unless expressly authorized in writing.
+
+If your authorized use processes personal data, Discord data, user IDs, server
+IDs, message metadata, ranks, economy records, VIP records, logs, moderation
+records or similar information, you are responsible for complying with
+applicable privacy and data-protection laws, including the LGPD when applicable.
+
+7. Privacy And Data Protection Obligations
+
+Any authorized operation, deployment, adaptation or derivative use that involves
+personal data must be designed and operated with privacy and data protection in
+mind. This includes, when applicable:
+
+- identifying the applicable role of each party, including controller,
+  operator/processor and any relevant service provider;
+- defining a lawful basis or other legally valid justification for each data
+  processing activity;
+- collecting and processing only the data that is necessary for the authorized
+  purpose;
+- maintaining clear information for users about what data is processed, why it
+  is processed, how long it is retained and how rights may be exercised;
+- implementing reasonable technical and organizational security measures;
+- keeping appropriate records of processing activities, logs and administrative
+  access where legally or operationally required;
+- defining retention and deletion rules for user, server, rank, economy, VIP,
+  moderation, audit and log data;
+- providing a process for user privacy requests where required by applicable
+  law;
+- establishing an incident response process for suspected or confirmed security
+  incidents involving personal data;
+- adopting appropriate contracts or data-processing terms with hosting,
+  database, analytics, logging, API and infrastructure providers;
+- applying special care when processing data related to children or
+  adolescents, when applicable.
+
+You may not export, copy, migrate, reuse or otherwise process data from the
+official Hatsutech, Animes Cafe or copyright holder environments unless you have
+separate, explicit written authorization to do so.
+
+8. Secrets, Tokens And Credentials
+
+No permission is granted to use any token, credential, API key, database URI,
+private environment variable, server configuration or hosting account belonging
+to the copyright holder, Hatsutech, Animes Cafe or any related service.
+
+Any authorized deployment must use independent credentials and infrastructure.
+
+9. Contributions
+
+Unless a separate written contribution agreement says otherwise, any issue, pull
+request, suggestion, patch, idea, bug report, improvement or contribution
+submitted to this repository may be reviewed, rejected, modified or incorporated
+by the copyright holder without creating any obligation to accept, publish,
+credit, compensate or license the project back to the contributor.
+
+By submitting a contribution, you represent that you have the right to submit it
+and that it does not knowingly include secrets, third-party proprietary code or
+material you are not allowed to provide.
+
+10. Third-Party Rights
+
+This license does not grant rights to Discord, MongoDB, Clash Royale, Supercell,
+Google, GitHub, Discloud, Animes Cafe assets, third-party emojis, third-party
+logos, third-party APIs, trademarks or any other third-party material that may
+be referenced by the project.
+
+You are responsible for obtaining any permission required from third parties.
+
+11. No Legal Advice
+
+This license, repository and related documentation do not constitute legal
+advice. Privacy, data protection, consumer, platform, copyright and software
+licensing obligations may vary depending on your facts, location, users,
+deployment model and providers. You are responsible for obtaining appropriate
+legal, privacy and security advice before operating or adapting the software.
+
+12. No Warranty
+
+THE SOFTWARE AND MATERIALS ARE PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT
+WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
+NON-INFRINGEMENT, SECURITY, AVAILABILITY, ERROR-FREE OPERATION, DATA RECOVERY,
+COMPATIBILITY WITH DISCORD CHANGES OR SUITABILITY FOR PRODUCTION USE.
+
+13. Limitation Of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT HOLDER SHALL
+NOT BE LIABLE FOR ANY CLAIM, DAMAGE, LOSS, LIABILITY, COST OR EXPENSE ARISING
+FROM ACCESS TO, REVIEW OF, USE OF, MISUSE OF, INABILITY TO USE, DEPLOYMENT OF,
+MODIFICATION OF OR RELIANCE ON THIS SOFTWARE, INCLUDING DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY OR PUNITIVE DAMAGES.
+
+14. Termination
+
+Any permission granted under a separate written authorization terminates
+automatically if you violate this license or any written condition attached to
+that authorization. Upon termination, you must stop using the software and
+delete or destroy unauthorized copies, deployments and derivatives.
+
+15. Governing Language
+
+This license is written in English for repository distribution. References to
+Brazilian legal or privacy concepts are included for clarity and do not limit
+any broader protection available to the copyright holder under applicable law.
+
+16. Reservation Of Rights
+
+All rights not expressly granted in a written authorization are reserved by the
+copyright holder.

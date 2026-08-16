@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+.deps_cache
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+backups/
+scripts/output/
+hatsutech-privacy-site/
+hatsutech-terms-site/
