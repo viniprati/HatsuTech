@@ -940,6 +940,10 @@ class EconomySystem(commands.Cog):
             log.info("Transacoes VIP antigas importadas de eco_logs: %s", imported)
 
     def validate_lootboxes(self):
+        if not is_db_online():
+            log.warning("Validacao de lootboxes adiada: MongoDB indisponivel.")
+            return
+
         for box_id in ("loot_common", "loot_premium"):
             setting = eco_settings_col.find_one({"_id": box_id})
             errors = self._validate_lootbox_setting(setting, box_id)

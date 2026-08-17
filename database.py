@@ -2,6 +2,7 @@ import os
 import time
 import threading
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import certifi
@@ -9,7 +10,8 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().with_name(".env"))
+load_dotenv(Path.home() / ".env", override=False)
 
 MONGO_DB_NAME = "DiscordBotDB"
 RECONNECT_COOLDOWN_SECONDS = 15
@@ -20,6 +22,7 @@ client = None
 db = None
 
 _db_online = False
+_last_offline_reason = None
 _last_reconnect_try = 0.0
 _reconnect_lock = threading.Lock()
 _index_lock = threading.Lock()
@@ -144,13 +147,18 @@ def _default_for_method(method_name: str):
 
 
 def _set_online_status(is_online: bool, reason: str | None = None):
-    global _db_online
+    global _db_online, _last_offline_reason
     if _db_online == is_online:
+        if not is_online and reason and reason != _last_offline_reason:
+            _last_offline_reason = reason
+            print(f"MongoDB indisponivel. Motivo: {reason}")
         return
     _db_online = is_online
     if is_online:
+        _last_offline_reason = None
         print("MongoDB reconectado com sucesso.")
     else:
+        _last_offline_reason = reason
         msg = "MongoDB indisponivel. Entrando em modo degradado."
         if reason:
             msg += f" Motivo: {reason}"

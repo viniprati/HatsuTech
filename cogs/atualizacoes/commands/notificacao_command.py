@@ -3,6 +3,9 @@ from ..cog import *
 
 
 async def execute(self, interaction: discord.Interaction):
+    if not await ensure_db_online(interaction, "o comando /notificacao"):
+        return
+
     user_id = interaction.user.id
 
 

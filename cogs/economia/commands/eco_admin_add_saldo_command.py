@@ -18,7 +18,13 @@ async def execute(self, interaction: discord.Interaction, usuario: discord.Membe
             ephemeral=True,
         )
 
-    add = max(0, int(valor))
+    add = int(valor)
+    if add <= 0:
+        return await interaction.response.send_message(
+            "❌ O valor para adicionar precisa ser maior que zero.",
+            ephemeral=True,
+        )
+
     before_doc = await asyncio.to_thread(self._get_user_doc, usuario.id, interaction.guild.id)
     before = int(before_doc.get(moeda.value, 0) or 0)
     credited = await asyncio.to_thread(self._credit_user, usuario.id, interaction.guild.id, {moeda.value: add})

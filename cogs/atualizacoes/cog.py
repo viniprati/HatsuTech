@@ -8,7 +8,7 @@ import asyncio
 from database import updates_col
 
 
-from utils import check_owner_or_perm
+from utils import check_owner_or_perm, ensure_db_online
 
 class Atualizacoes(commands.Cog):
     def __init__(self, bot):

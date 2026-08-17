@@ -8,9 +8,10 @@ async def execute(self, interaction: discord.Interaction, titulo: str, mensagem:
 
     await interaction.response.defer(ephemeral=True)
 
+    if not await ensure_db_online(interaction, "o comando /anunciar"):
+        return
 
-    users_data = list(updates_col.find({}))
-    total_users = len(users_data)
+    total_users = updates_col.count_documents({})
 
     if total_users == 0:
         return await interaction.followup.send("⚠️ Ninguém ativou as notificações ainda.")
@@ -34,7 +35,7 @@ async def execute(self, interaction: discord.Interaction, titulo: str, mensagem:
 
     await interaction.followup.send(f"🚀 Iniciando envio para **{total_users}** usuários...")
 
-    for data in users_data:
+    for data in updates_col.find({}):
         user_id = data["user_id"]
         try:
 
