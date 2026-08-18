@@ -281,6 +281,7 @@ temp_col = ResilientCollection("temproles")
 voice_col = ResilientCollection("voice_data")
 guilds_col = ResilientCollection("guilds")
 updates_col = ResilientCollection("updates")
+welcome_dm_logs_col = ResilientCollection("welcome_dm_logs")
 eco_users_col = ResilientCollection("eco_users")
 eco_settings_col = ResilientCollection("eco_settings")
 eco_shop_col = ResilientCollection("eco_shop")
@@ -323,6 +324,11 @@ def _initialize_indexes():
                 ([("members.user_id", 1)], "guilds_members_user_id"),
                 ([("leader_id", 1)], "guilds_leader_id"),
                 ([("name", 1)], "guilds_name"),
+            ],
+            "welcome_dm_logs": [
+                ([("guild_id", 1), ("created_at", -1)], "welcome_dm_logs_guild_created"),
+                ([("user_id", 1)], "welcome_dm_logs_user_id"),
+                ([("status", 1)], "welcome_dm_logs_status"),
             ],
         }
         for collection_name, indexes in specs.items():
