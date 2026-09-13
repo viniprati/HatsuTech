@@ -1,0 +1,39 @@
+name: Security improvement
+description: Request a non-critical security hardening change.
+title: "security: "
+labels:
+  - security
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not disclose critical vulnerabilities here. Use private vulnerability reporting or contact the maintainer privately.
+  - type: textarea
+    id: area
+    attributes:
+      label: Affected area
+      description: Which command, cog, workflow, permission, dependency or configuration is affected?
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risk
+      description: What could go wrong if this is not improved?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected secure behavior
+      description: What should the safer behavior look like?
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: How can the fix be verified without exposing sensitive details?
+    validations:
+      required: false
+

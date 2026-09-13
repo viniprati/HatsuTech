@@ -1,0 +1,35 @@
+name: Refactor
+description: Propose a behavior-preserving code improvement.
+title: "refactor: "
+labels:
+  - refactor
+body:
+  - type: textarea
+    id: area
+    attributes:
+      label: Area
+      description: Which cog, command, helper or workflow needs refactoring?
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: Reason
+      description: What concrete complexity, duplication or risk should be reduced?
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Behavior preservation
+      description: Which behavior must remain unchanged?
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: How should this be tested or reviewed?
+    validations:
+      required: true
+
