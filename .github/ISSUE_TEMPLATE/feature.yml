@@ -1,0 +1,38 @@
+name: Feature request
+description: Propose a real product or operational improvement.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user, staff or operational problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What must be true for this feature to be considered done?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks or edge cases
+      description: Mention permissions, abuse paths, rate limits, privacy or migration risks.
+    validations:
+      required: false
+
