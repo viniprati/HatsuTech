@@ -51,7 +51,7 @@ class ClashRoyaleClient:
                 headers={
                     "Authorization": f"Bearer {self.token}",
                     "Accept": "application/json",
-                    "User-Agent": "Hatsutech-Discord-Bot/1.0",
+                    "User-Agent": "HatsuTech-Discord-Bot/1.0",
                 },
                 timeout=aiohttp.ClientTimeout(total=20),
             )
