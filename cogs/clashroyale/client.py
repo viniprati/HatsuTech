@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 from pathlib import Path
 from urllib.parse import quote
@@ -23,6 +24,7 @@ class ClashRoyaleApiError(Exception):
 
 class ClashRoyaleClient:
     BASE_URL = "https://api.clashroyale.com/v1"
+    TAG_RE = re.compile(r"^#[0289PYLQGRJCUV]{3,20}$")
 
     def __init__(self, token: str | None = None, ttl_seconds: int = 300):
         self.token = (token or os.getenv("CLASH_ROYALE_API_TOKEN") or "").strip()
@@ -85,6 +87,10 @@ class ClashRoyaleClient:
             raise ValueError("Informe uma tag valida.")
         if not value.startswith("#"):
             value = f"#{value}"
+        if not ClashRoyaleClient.TAG_RE.fullmatch(value):
+            raise ValueError(
+                "Tag invalida. Use a tag do Clash Royale com `#` e apenas caracteres validos, exemplo: `#P90UU9JCQ`."
+            )
         return value
 
     @classmethod
