@@ -1,6 +1,6 @@
-# Hatsutech
+# HatsuTech
 
-Hatsutech is a Discord bot built for the Animes Cafe community.
+HatsuTech is a Discord bot built for the Animes Cafe community.
 
 The project brings together moderation, engagement, internal economy, ranks,
 events, temporary roles, VIP role management, guild systems, announcements,
@@ -8,7 +8,7 @@ notifications and community tools in one bot.
 
 ## Purpose
 
-Hatsutech helps organize and automate community operations inside Discord. Its
+HatsuTech helps organize and automate community operations inside Discord. Its
 main areas are:
 
 - moderation and role management;
@@ -20,9 +20,21 @@ main areas are:
 - update broadcasts and user notification preferences;
 - Clash Royale account and clan utilities.
 
+## Repository Access
+
+This repository is public for reading, review and transparency. Public
+visibility does not grant permission to use, copy, host, modify, redistribute or
+create derivative works from the bot.
+
+For review guidance, see:
+
+- [Repository Review](docs/REPOSITORY_REVIEW.md)
+- [AI Development Workflow](docs/AI_DEVELOPMENT_WORKFLOW.md)
+- [Security Policy](SECURITY.md)
+
 ## Service Documents
 
-The official Hatsutech service is governed by:
+The official HatsuTech service is governed by:
 
 - Terms of Service: https://viniprati.github.io/Hatsutech-Termos-de-Uso/
 - Privacy Policy: https://viniprati.github.io/Hatsutech-Politica-de-Privacidade/
