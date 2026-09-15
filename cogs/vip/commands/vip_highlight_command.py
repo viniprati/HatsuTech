@@ -4,6 +4,8 @@ from ..cog import *
 
 async def execute_highlight(self, it, cor_primaria: str = None, cor_secundaria: str = None):
     await it.response.defer(ephemeral=True)
+    if not await ensure_guild_interaction(it, "a opção Cargo destaque do /vip"):
+        return
     if not await ensure_db_online(it, "a opção Cargo destaque do /vip"):
         return
 
@@ -79,8 +81,23 @@ async def execute_highlight(self, it, cor_primaria: str = None, cor_secundaria: 
         if role and role not in it.user.roles:
             try:
                 await it.user.add_roles(role)
-            except (discord.Forbidden, discord.HTTPException):
-                pass
+            except discord.Forbidden:
+                log.warning(
+                    "Sem permissao para aplicar destaque VIP role_id=%s user_id=%s guild_id=%s",
+                    role.id,
+                    it.user.id,
+                    it.guild.id,
+                )
+                await it.followup.send(
+                    "⚠️ O destaque existe, mas não consegui aplicar o cargo por falta de permissão/hierarquia.",
+                    ephemeral=True,
+                )
+            except discord.HTTPException as e:
+                log.error("Erro HTTP ao aplicar destaque VIP role_id=%s user_id=%s: %s", role.id, it.user.id, e)
+                await it.followup.send(
+                    "⚠️ O destaque existe, mas não consegui aplicar o cargo agora.",
+                    ephemeral=True,
+                )
 
         positioned_existing = await self._position_monarch_highlight_role(it.guild, role)
         if not positioned_existing:

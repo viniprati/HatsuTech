@@ -3,6 +3,9 @@ from ..cog import *
 
 
 async def execute(self, it: discord.Interaction, periodo: app_commands.Choice[str] = None, tipo: app_commands.Choice[str] = None):
+    if not await ensure_guild_interaction(it, "o comando /guilda ranking"):
+        return
+
     period = periodo.value if periodo else "monthly"
     score_type = tipo.value if tipo else "total"
 

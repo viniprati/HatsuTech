@@ -20,7 +20,7 @@ except ImportError:
     REVIVER_ROLE_ID = 0
     REVIVER_PERM_ROLE_ID = 1413646810316279990
 
-from utils import check_owner_or_perm, ensure_db_online, has_full_access
+from utils import check_owner_or_perm, ensure_db_online, ensure_guild_interaction, has_full_access
 
 FUSO_BRT = timezone(timedelta(hours=-3))
 REVIVER_COOLDOWN_MINUTES = 30

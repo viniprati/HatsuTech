@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from database import msg_col, voice_col, event_col, vip_col
 
-from utils import AntiSpamSystem, check_owner_or_perm, build_update_pipeline, get_brt_keys
+from utils import AntiSpamSystem, check_owner_or_perm, build_update_pipeline, ensure_guild_interaction, get_brt_keys
 
 try:
     from config import CHAT_COUNT_CHANNEL_ID

@@ -8,7 +8,7 @@ from datetime import datetime
 
 
 
-from utils import bot_can_manage_role, can_manage_role, check_owner_or_perm, process_icon
+from utils import bot_can_manage_role, can_manage_role, check_owner_or_perm, ensure_guild_interaction, process_icon
 
 
 try:

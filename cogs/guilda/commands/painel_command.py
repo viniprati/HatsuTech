@@ -4,6 +4,8 @@ from ..cog import *
 
 async def execute(self, it: discord.Interaction, usuario: discord.Member = None):
     await it.response.defer()
+    if not await ensure_guild_interaction(it, "o comando /guilda painel"):
+        return
 
     target = usuario or it.user
     guild_data = self.get_user_guild(target.id)

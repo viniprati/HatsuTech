@@ -3,6 +3,8 @@ from ..cog import *
 
 
 async def execute(self, interaction: discord.Interaction, usuario: discord.Member, moeda: Choice[str], valor: int, motivo: str):
+    if not await ensure_guild_interaction(interaction, "o comando /eco_admin set_saldo"):
+        return
     if not await ensure_db_online(interaction, "o comando /eco_admin set_saldo"):
         return
 

@@ -4,6 +4,10 @@ from ..cog import *
 
 async def execute(self, it, quantidade: int):
     await it.response.defer(ephemeral=True)
+    if not await ensure_guild_interaction(it, "o comando /limpar"):
+        return
+    if not hasattr(it.channel, "purge"):
+        return await it.followup.send("Use este comando em um canal de texto do servidor.", ephemeral=True)
     if quantidade < 1 or quantidade > 100:
         return await it.followup.send("Informe uma quantidade entre 1 e 100 mensagens.", ephemeral=True)
     try:

@@ -25,6 +25,9 @@ def _neutralize_mentions(value: str) -> str:
 async def execute(self, it: discord.Interaction, jogo: str, mensagem: str):
     await it.response.defer(ephemeral=True)
 
+    if not await ensure_guild_interaction(it, "o comando /jogar"):
+        return
+
     if not await ensure_db_online(it, "o comando /jogar"):
         return
 

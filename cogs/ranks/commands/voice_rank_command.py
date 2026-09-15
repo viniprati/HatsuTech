@@ -4,6 +4,8 @@ from ..cog import *
 
 async def execute(self, it: discord.Interaction, periodo: Choice[str] = None):
     await it.response.defer()
+    if not await ensure_guild_interaction(it, "o comando /voice_rank"):
+        return
     mode = periodo.value if periodo else "global"
     keys = get_brt_keys()
 

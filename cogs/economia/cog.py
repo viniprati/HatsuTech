@@ -23,7 +23,7 @@ from database import (
     is_db_online,
     temp_col,
 )
-from utils import BOT_OWNER_ID, check_owner_or_perm, ensure_db_online, get_data_guild_id
+from utils import BOT_OWNER_ID, check_owner_or_perm, ensure_db_online, ensure_guild_interaction, get_data_guild_id
 
 try:
     from config import CHAT_COUNT_CHANNEL_ID, ECONOMY_LOG_CHANNEL_ID
@@ -1994,6 +1994,8 @@ class EconomySystem(commands.Cog):
         await execute(self, interaction)
 
     async def _open_box(self, interaction: discord.Interaction, box_id: str, quantidade: int):
+        if not await ensure_guild_interaction(interaction, "este comando"):
+            return
         if not await ensure_db_online(interaction, "abrir lootbox"):
             return
         if not await self._check_action_cooldown(interaction, f"open_box:{box_id}"):
@@ -2195,6 +2197,8 @@ class EconomySystem(commands.Cog):
 
     @eco.command(name="loja", description="Mostra a loja de essencias.")
     async def eco_loja(self, interaction: discord.Interaction):
+        if not await ensure_guild_interaction(interaction, "o comando /eco loja"):
+            return
         view = EcoStoreView(self, interaction.user.id, interaction.guild.id)
         await interaction.response.send_message(embed=await view.build_embed(interaction.guild), view=view, ephemeral=True)
 
