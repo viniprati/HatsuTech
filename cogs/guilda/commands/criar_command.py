@@ -3,6 +3,9 @@ from ..cog import *
 
 
 async def execute(self, it: discord.Interaction, nome: str, emoji: str):
+    if not await ensure_guild_interaction(it, "o comando /guilda criar"):
+        return
+
     nome = nome.strip()
     emoji = emoji.strip()
     if not nome or len(nome) > 20:

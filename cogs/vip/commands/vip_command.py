@@ -47,6 +47,8 @@ class VipPanelTypeView(ui.View):
 
 
 async def execute(self, it, cor_primaria: str = None, cor_secundaria: str = None):
+    if not await ensure_guild_interaction(it, "o comando /vip"):
+        return
     if not await ensure_db_online(it, "o comando /vip"):
         return
 
@@ -78,6 +80,8 @@ async def execute(self, it, cor_primaria: str = None, cor_secundaria: str = None
 
 async def open_common_panel(self, it, cor_primaria: str = None, cor_secundaria: str = None):
     await it.response.defer(ephemeral=True)
+    if not await ensure_guild_interaction(it, "a opção Cargo comum do /vip"):
+        return
     if not await ensure_db_online(it, "a opção Cargo comum do /vip"):
         return
     limit = self.get_vip_limit(it.user)

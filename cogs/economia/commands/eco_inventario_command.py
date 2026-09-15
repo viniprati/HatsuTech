@@ -3,6 +3,8 @@ from ..cog import *
 
 
 async def execute(self, interaction: discord.Interaction):
+    if not await ensure_guild_interaction(interaction, "o comando /eco inventario"):
+        return
     doc = await asyncio.to_thread(self._get_user_doc, interaction.user.id, interaction.guild.id)
     limits = await asyncio.to_thread(
         eco_limits_col.find_one, {"_id": self._limits_doc_id(interaction.user.id, interaction.guild.id)}

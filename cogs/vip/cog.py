@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from database import vip_col, vip_recovery_logs_col, vip_role_presets_col, temp_col
 
 
-from utils import check_owner_or_perm, process_icon, BOT_OWNER_ID, has_full_access, ensure_db_online
+from utils import check_owner_or_perm, process_icon, BOT_OWNER_ID, has_full_access, ensure_db_online, ensure_guild_interaction
 
 log = logging.getLogger(__name__)
 HEX_COLOR_RE = re.compile(r"^[0-9a-fA-F]{6}$")
@@ -1472,6 +1472,9 @@ class VipSystem(commands.Cog):
     @app_commands.command(name="vincular_vip", description="Admin: Vincula cargo VIP.")
     @check_owner_or_perm(manage_roles=True)
     async def vincular_vip(self, it, usuario: discord.Member, cargo: discord.Role):
+        if not await ensure_guild_interaction(it, "o comando /vincular_vip"):
+            return
+
         from .commands.vincular_vip_command import execute
 
         await execute(self, it, usuario, cargo)
@@ -1492,6 +1495,9 @@ class VipSystem(commands.Cog):
         tempo: str,
         somar: bool = False
     ):
+        if not await ensure_guild_interaction(it, "o comando /temprole"):
+            return
+
         from .commands.temprole_command import execute
 
         await execute(self, it, usuario, cargo, tempo, somar)
@@ -1499,6 +1505,9 @@ class VipSystem(commands.Cog):
     @app_commands.command(name="temprole_remover", description="Abre painel para reduzir/remover tempo de um temprole.")
     @check_owner_or_perm(manage_roles=True)
     async def temprole_remover(self, it: discord.Interaction, usuario: discord.Member, cargo: discord.Role):
+        if not await ensure_guild_interaction(it, "o comando /temprole_remover"):
+            return
+
         from .commands.temprole_remover_command import execute
 
         await execute(self, it, usuario, cargo)
@@ -1514,6 +1523,9 @@ class VipSystem(commands.Cog):
         ]
     )
     async def vervips(self, it: discord.Interaction, origem: app_commands.Choice[str] = None):
+        if not await ensure_guild_interaction(it, "o comando /vervips"):
+            return
+
         from .commands.vervips_command import execute
 
         await execute(self, it, origem.value if origem else "todos")
@@ -1521,6 +1533,9 @@ class VipSystem(commands.Cog):
     @app_commands.command(name="fix_database", description="⚠️ Admin: Corrige e unifica tempos duplicados no banco.")
     @check_owner_or_perm(administrator=True)
     async def fix_database(self, it: discord.Interaction):
+        if not await ensure_guild_interaction(it, "o comando /fix_database"):
+            return
+
         from .commands.fix_database_command import execute
 
         await execute(self, it)
@@ -1528,6 +1543,9 @@ class VipSystem(commands.Cog):
     @app_commands.command(name="admin_vip", description="Lista VIPs.")
     @check_owner_or_perm(administrator=True)
     async def admin_vip(self, it):
+        if not await ensure_guild_interaction(it, "o comando /admin_vip"):
+            return
+
         from .commands.admin_vip_command import execute
 
         await execute(self, it)
@@ -1538,6 +1556,9 @@ class VipSystem(commands.Cog):
     )
     @check_owner_or_perm(administrator=True)
     async def organizar_vips(self, it: discord.Interaction, incluir_nao_vinculados: bool = True):
+        if not await ensure_guild_interaction(it, "o comando /organizar_vips"):
+            return
+
         from .commands.organizar_vips_command import execute
 
         await execute(self, it, incluir_nao_vinculados)

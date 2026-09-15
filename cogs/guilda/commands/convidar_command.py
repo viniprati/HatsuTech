@@ -3,6 +3,9 @@ from ..cog import *
 
 
 async def execute(self, it: discord.Interaction, usuario: discord.Member):
+    if not await ensure_guild_interaction(it, "o comando /guilda convidar"):
+        return
+
     guild_data = self.get_user_guild(it.user.id)
 
     if not guild_data:
@@ -20,6 +23,9 @@ async def execute(self, it: discord.Interaction, usuario: discord.Member):
 
     if usuario.bot:
         return await it.response.send_message("🤖 Robôs não entram em guildas.", ephemeral=True)
+
+    if not hasattr(it.channel, "send"):
+        return await it.response.send_message("Use este comando em um canal onde o convite possa ser enviado.", ephemeral=True)
 
     view = GuildInviteView(self, guild_data, usuario, it.user)
     await it.response.send_message(f"📨 Convite enviado para {usuario.mention}.", ephemeral=True)

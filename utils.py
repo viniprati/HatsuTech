@@ -150,6 +150,18 @@ async def ensure_db_online(interaction: discord.Interaction, action_label: str =
     return False
 
 
+async def ensure_guild_interaction(interaction: discord.Interaction, action_label: str = "este comando") -> bool:
+    if interaction.guild is not None:
+        return True
+
+    msg = f"Use {action_label} dentro de um servidor."
+    if interaction.response.is_done():
+        await interaction.followup.send(msg, ephemeral=True)
+    else:
+        await interaction.response.send_message(msg, ephemeral=True)
+    return False
+
+
 def build_update_pipeline(field_name: str, value: int = 1):
     """Pipeline MongoDB para somar estatisticas (Chat/Voz)."""
     keys = get_brt_keys()
