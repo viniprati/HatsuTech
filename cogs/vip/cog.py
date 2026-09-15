@@ -12,7 +12,16 @@ from datetime import datetime, timezone
 from database import vip_col, vip_recovery_logs_col, vip_role_presets_col, temp_col
 
 
-from utils import check_owner_or_perm, process_icon, BOT_OWNER_ID, has_full_access, ensure_db_online, ensure_guild_interaction
+from utils import (
+    DISCORD_EMBED_DESCRIPTION_LIMIT,
+    check_owner_or_perm,
+    process_icon,
+    BOT_OWNER_ID,
+    has_full_access,
+    ensure_db_online,
+    ensure_guild_interaction,
+    truncate_discord_text,
+)
 
 log = logging.getLogger(__name__)
 HEX_COLOR_RE = re.compile(r"^[0-9a-fA-F]{6}$")
@@ -371,6 +380,7 @@ class VipMainView(ui.View):
             return
         members = self.role.members
         desc = "\n".join([f"`{i:02d}.` {m.mention}" for i, m in enumerate(members, 1)]) if members else "Ninguem."
+        desc = truncate_discord_text(desc, DISCORD_EMBED_DESCRIPTION_LIMIT, "\n[conteudo truncado]")
         embed = discord.Embed(title=f"Membros VIP: {self.role.name}", description=desc, color=self.role.color)
         embed.set_footer(text=f"Vagas: {len(members)} / {self.limit}")
         await it.response.send_message(embed=embed, view=VipMembersView(self.cog, self.role, self.limit), ephemeral=True)
@@ -729,12 +739,16 @@ class VipSystem(commands.Cog):
         self.bot = bot
         self._vip_locks = {}
         self._manual_vip_member_removals = {}
-        self.check_temproles.start()
-        self.reconcile_absent_vips.start()
+        if not self.check_temproles.is_running():
+            self.check_temproles.start()
+        if not self.reconcile_absent_vips.is_running():
+            self.reconcile_absent_vips.start()
 
     def cog_unload(self):
-        self.check_temproles.cancel()
-        self.reconcile_absent_vips.cancel()
+        if self.check_temproles.is_running():
+            self.check_temproles.cancel()
+        if self.reconcile_absent_vips.is_running():
+            self.reconcile_absent_vips.cancel()
 
 
     def get_vip_limit(self, member):
@@ -1621,6 +1635,14 @@ class VipSystem(commands.Cog):
 
     @reconcile_absent_vips.before_loop
     async def before_reconcile(self): await self.bot.wait_until_ready()
+
+    @check_temproles.error
+    async def check_temproles_error(self, error):
+        log.exception("check_temproles_failed error=%s", error)
+
+    @reconcile_absent_vips.error
+    async def reconcile_absent_vips_error(self, error):
+        log.exception("reconcile_absent_vips_failed error=%s", error)
 
 async def setup(bot):
     await bot.add_cog(VipSystem(bot))

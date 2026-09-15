@@ -58,7 +58,13 @@ LOG_CARGOS_ID = int(os.getenv("LOG_CARGOS_ID", "1444675225743528087"))
 
 def validate_required_config() -> bool:
     """Valida configuracoes obrigatorias sem encerrar o processo durante import."""
+    ok = True
     if not DISCORD_TOKEN:
         logger.critical("ERRO FATAL: Token do Discord faltando! Verifique seu arquivo .env")
-        return False
-    return True
+        ok = False
+    if not ALLOWED_GUILD_IDS:
+        logger.critical("ERRO FATAL: ALLOWED_GUILD_IDS vazio. O bot precisa de pelo menos um servidor autorizado.")
+        ok = False
+    if MAIN_GUILD_ID not in ALLOWED_GUILD_IDS:
+        logger.warning("MAIN_GUILD_ID nao esta em ALLOWED_GUILD_IDS; confira a configuracao do ambiente.")
+    return ok

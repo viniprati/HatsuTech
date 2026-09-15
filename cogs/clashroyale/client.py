@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import time
@@ -12,6 +13,8 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 load_dotenv(Path.home() / ".env", override=False)
+
+log = logging.getLogger(__name__)
 
 
 class ClashRoyaleApiError(Exception):
@@ -71,12 +74,14 @@ class ClashRoyaleClient:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get("https://api.ipify.org") as resp:
                     if resp.status != 200:
+                        log.warning("clash_public_ip_lookup_failed status=%s", resp.status)
                         return None
                     ip = (await resp.text()).strip()
                     if ip:
                         self._public_ip_cache = (time.time() + 300, ip)
                         return ip
-        except Exception:
+        except Exception as exc:
+            log.warning("clash_public_ip_lookup_error error=%s", exc)
             return None
         return None
 
@@ -113,7 +118,7 @@ class ClashRoyaleClient:
 
             session = await self._get_session()
             url = f"{self.BASE_URL}{path}"
-            for _attempt in range(4):
+            for attempt in range(4):
                 async with session.get(url, params=params) as resp:
                     if resp.status == 429:
                         try:
@@ -121,13 +126,21 @@ class ClashRoyaleClient:
                             retry_after = float(data.get("retryAfter") or data.get("retry_after") or 1)
                         except Exception:
                             retry_after = 1
+                        log.warning(
+                            "clash_rate_limited path=%s attempt=%s retry_after=%s",
+                            path,
+                            attempt + 1,
+                            retry_after,
+                        )
                         await asyncio.sleep(retry_after + 0.25)
                         continue
 
                     try:
                         data = await resp.json(content_type=None)
-                    except Exception:
-                        data = {"reason": "bad_response", "message": await resp.text()}
+                    except Exception as exc:
+                        body = await resp.text()
+                        log.warning("clash_bad_json_response path=%s status=%s error=%s", path, resp.status, exc)
+                        data = {"reason": "bad_response", "message": body[:300]}
 
                     if 200 <= resp.status < 300:
                         self._cache[cache_key] = (time.time() + ttl, data)
@@ -138,6 +151,12 @@ class ClashRoyaleClient:
                         public_ip = await self.get_public_ip()
                         if public_ip:
                             message = f"{message} IP publico da host: {public_ip}"
+                    log.warning(
+                        "clash_api_error path=%s status=%s reason=%s",
+                        path,
+                        resp.status,
+                        data.get("reason") or "api_error",
+                    )
                     raise ClashRoyaleApiError(
                         resp.status,
                         str(data.get("reason") or "api_error"),

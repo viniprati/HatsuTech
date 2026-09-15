@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 
 import discord
@@ -23,6 +24,8 @@ from .commands import summary as summary_commands
 from .commands.alerts import IMPORTANT_CHESTS
 from .commands.common import CR_COLOR, card_line, cr_embed, fmt_int, fmt_tag, truncate
 
+log = logging.getLogger(__name__)
+
 
 class ClashRoyale(commands.GroupCog, name="royale", description="Comandos de Clash Royale."):
     conta = app_commands.Group(name="conta", description="Vinculo e perfil do Clash Royale.")
@@ -41,10 +44,12 @@ class ClashRoyale(commands.GroupCog, name="royale", description="Comandos de Cla
         self.accounts_col = ResilientCollection("clash_royale_accounts")
         self.settings_col = ResilientCollection("clash_royale_settings")
         self.logs_col = ResilientCollection("clash_royale_logs")
-        self.royale_alert_loop.start()
+        if not self.royale_alert_loop.is_running():
+            self.royale_alert_loop.start()
 
     async def cog_unload(self):
-        self.royale_alert_loop.cancel()
+        if self.royale_alert_loop.is_running():
+            self.royale_alert_loop.cancel()
         await self.api.close()
 
     async def log_event(self, guild_id: int | str | None, event: str, detail: str):
@@ -170,6 +175,10 @@ class ClashRoyale(commands.GroupCog, name="royale", description="Comandos de Cla
     @royale_alert_loop.before_loop
     async def before_royale_alert_loop(self):
         await self.bot.wait_until_ready()
+
+    @royale_alert_loop.error
+    async def royale_alert_loop_error(self, error):
+        log.exception("royale_alert_loop_failed error=%s", error)
 
     async def _run_chest_alerts(self):
         docs = await asyncio.to_thread(

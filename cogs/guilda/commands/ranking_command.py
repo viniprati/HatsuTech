@@ -46,6 +46,7 @@ async def execute(self, it: discord.Interaction, periodo: app_commands.Choice[st
             desc += " | 👑 líder ausente"
         desc += "\n"
     if not desc: desc = "Nenhuma guilda criada ainda."
+    desc = truncate_discord_text(desc, DISCORD_EMBED_DESCRIPTION_LIMIT, "\n[conteudo truncado]")
     embed = discord.Embed(
         title=f"🏆 Ranking de Guildas - {period_labels.get(period, 'Geral')} / {type_labels.get(score_type, 'Soma geral')}",
         description=desc,

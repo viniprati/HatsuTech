@@ -23,7 +23,15 @@ from database import (
     is_db_online,
     temp_col,
 )
-from utils import BOT_OWNER_ID, check_owner_or_perm, ensure_db_online, ensure_guild_interaction, get_data_guild_id
+from utils import (
+    DISCORD_EMBED_DESCRIPTION_LIMIT,
+    BOT_OWNER_ID,
+    check_owner_or_perm,
+    ensure_db_online,
+    ensure_guild_interaction,
+    get_data_guild_id,
+    truncate_discord_text,
+)
 
 try:
     from config import CHAT_COUNT_CHANNEL_ID, ECONOMY_LOG_CHANNEL_ID
@@ -809,14 +817,16 @@ class EconomySystem(commands.Cog):
         self.action_last_used = {}
         self.voice_eligible_since = {}
         self.economy_boosts = {}
-        self.voice_tick.start()
+        if not self.voice_tick.is_running():
+            self.voice_tick.start()
 
     async def cog_load(self):
         await asyncio.to_thread(self.ensure_defaults)
         await asyncio.to_thread(self._load_active_economy_boosts)
 
     def cog_unload(self):
-        self.voice_tick.cancel()
+        if self.voice_tick.is_running():
+            self.voice_tick.cancel()
 
     def ensure_defaults(self):
         if not ECONOMY_EARN_CHANNEL_IDS:
@@ -1914,6 +1924,10 @@ class EconomySystem(commands.Cog):
     @voice_tick.before_loop
     async def before_voice_tick(self):
         await self.bot.wait_until_ready()
+
+    @voice_tick.error
+    async def voice_tick_error(self, error):
+        log.exception("economy_voice_tick_failed error=%s", error)
 
     def _format_balance_embed(self, user: discord.Member, doc: dict) -> discord.Embed:
         stats = doc.get("stats", {})

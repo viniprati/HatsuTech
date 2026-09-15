@@ -85,6 +85,19 @@ class AdminDashboardView(ui.View):
                 continue
         return count
 
+    def _count_recent_members(self, guild: discord.Guild) -> int:
+        now = datetime.now(timezone.utc)
+        count = 0
+        for member in guild.members:
+            joined_at = getattr(member, "joined_at", None)
+            if joined_at is None:
+                continue
+            if joined_at.tzinfo is None:
+                joined_at = joined_at.replace(tzinfo=timezone.utc)
+            if (now - joined_at).total_seconds() < 86400:
+                count += 1
+        return count
+
     async def refresh_snapshot(self, guild: discord.Guild):
         keys = get_brt_keys()
         day_key = keys["day"]
@@ -147,11 +160,12 @@ class AdminDashboardView(ui.View):
         engagement_rate = (active_today / total_members * 100) if total_members else 0
         tag_users = snap["server_tag_users"]
         tag_rate = (tag_users / total_members * 100) if total_members else 0
+        recent_members = self._count_recent_members(g)
 
         e = discord.Embed(title="🖥️ Sistema e Saúde", color=0x2b2d31, timestamp=datetime.now())
         e.set_thumbnail(url=self.bot.user.display_avatar.url)
         e.add_field(name="🤖 Bot Status", value=f"Ping: `{ping}ms`\nUptime: `{uptime_str}`\nPython: `{platform.python_version()}`", inline=True)
-        e.add_field(name="👥 Membros", value=f"Total: `{total_members}`\nOnline: `{online_count}`\nNovos (24h): `{len([m for m in g.members if (datetime.now(timezone.utc) - m.joined_at).days < 1])}`", inline=True)
+        e.add_field(name="👥 Membros", value=f"Total: `{total_members}`\nOnline: `{online_count}`\nNovos (24h): `{recent_members}`", inline=True)
         e.add_field(name="📈 Engajamento Diário", value=f"Ativos Hoje: **{active_today}**\nTaxa: `{engagement_rate:.1f}%` dos membros", inline=True)
         e.add_field(name="🏷️ Tag do Servidor", value=f"Usando: **{tag_users}**\nTaxa: `{tag_rate:.1f}%`", inline=True)
         e.add_field(name="📦 Atualização", value=f"Atualizado: `{self.snapshot_at.strftime('%H:%M:%S')}`", inline=True)
