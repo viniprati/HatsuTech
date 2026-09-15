@@ -45,7 +45,10 @@ jobs:
         run: |
           python -m compileall -q main.py config.py database.py utils.py cogs scripts
 
+      - name: Validate static bot contracts
+        run: |
+          python scripts/validate_static_contracts.py
+
       - name: Check installed dependencies
         run: |
           python -m pip check
-

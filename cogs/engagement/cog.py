@@ -514,10 +514,12 @@ class Engagement(commands.Cog):
         self.bot = bot
         self.badges_cache = {}
         self.load_badges_from_db()
-        self.supporter_tag_check_loop.start()
+        if not self.supporter_tag_check_loop.is_running():
+            self.supporter_tag_check_loop.start()
 
     def cog_unload(self):
-        self.supporter_tag_check_loop.cancel()
+        if self.supporter_tag_check_loop.is_running():
+            self.supporter_tag_check_loop.cancel()
 
     def load_badges_from_db(self):
         try:
@@ -655,6 +657,10 @@ class Engagement(commands.Cog):
     @supporter_tag_check_loop.before_loop
     async def before_supporter_tag_check_loop(self):
         await self.bot.wait_until_ready()
+
+    @supporter_tag_check_loop.error
+    async def supporter_tag_check_loop_error(self, error):
+        log.exception("supporter_tag_check_loop_failed error=%s", error)
 
     @app_commands.command(name="config_badge", description="Adiciona/Atualiza uma badge para um cargo.")
     @check_owner_or_perm(administrator=True)

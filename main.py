@@ -27,7 +27,7 @@ try:
     from utils import AntiSpamSystem as ImportedAntiSpamSystem, BOT_OWNER_ID, has_full_access, is_allowed_guild
     AntiSpamSystem = ImportedAntiSpamSystem
 except ImportError as e:
-    print(f"WARN: AntiSpamSystem unavailable: {e}. Spam scoring filter disabled.")
+    logging.getLogger("SecurityBot").warning("AntiSpamSystem unavailable. Spam scoring filter disabled: %s", e)
     from utils import BOT_OWNER_ID, has_full_access
 
     def is_allowed_guild(guild_id: int | None) -> bool:
@@ -35,9 +35,9 @@ except ImportError as e:
 
 try:
     from database import event_col, msg_col, client
-    print("OK: Database modules loaded in main.")
+    logging.getLogger("SecurityBot").info("Database modules loaded in main.")
 except ImportError as e:
-    print(f"ERROR: Failed to import database modules: {e}")
+    logging.getLogger("SecurityBot").error("Failed to import database modules: %s", e)
 
     class DummyCol:
         def __getattr__(self, name):
@@ -132,9 +132,17 @@ class SecurityBot(commands.Bot):
         return False
 
     async def on_tree_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        command_name = interaction.command.name if interaction.command else "desconhecido"
+        error_summary = summarize_app_command_error(error)
         if interaction.response.is_done():
-            command_name = interaction.command.name if interaction.command else "desconhecido"
-            print(f"Command error in {command_name}: {summarize_app_command_error(error)}")
+            logger.error(
+                "app_command_error_after_response command=%s guild_id=%s channel_id=%s user_id=%s error=%s",
+                command_name,
+                getattr(interaction.guild, "id", None),
+                getattr(interaction.channel, "id", None),
+                getattr(interaction.user, "id", None),
+                error_summary,
+            )
             try:
                 await interaction.followup.send("Não consegui concluir esse comando agora.", ephemeral=True)
             except Exception:
@@ -154,8 +162,14 @@ class SecurityBot(commands.Bot):
                 f"Calma um pouco. Tente de novo em {error.retry_after:.2f}s.", ephemeral=True
             )
         else:
-            command_name = interaction.command.name if interaction.command else "desconhecido"
-            print(f"Command error in {command_name}: {summarize_app_command_error(error)}")
+            logger.error(
+                "app_command_error command=%s guild_id=%s channel_id=%s user_id=%s error=%s",
+                command_name,
+                getattr(interaction.guild, "id", None),
+                getattr(interaction.channel, "id", None),
+                getattr(interaction.user, "id", None),
+                error_summary,
+            )
             try:
                 await interaction.response.send_message("Não consegui concluir esse comando agora.", ephemeral=True)
             except Exception:
@@ -189,7 +203,7 @@ class SecurityBot(commands.Bot):
             try:
                 await self._refresh_event_cache()
             except Exception as e:
-                print(f"Failed to refresh event cache: {e}")
+                logger.warning("event_cache_refresh_failed channel_id=%s error=%s", message.channel.id, e)
 
         data = self.event_cache.get(message.channel.id)
         if not data or not data.get("active", False):
@@ -225,16 +239,22 @@ class SecurityBot(commands.Bot):
                 update,
             )
         except Exception as e:
-            print(f"Failed to compute event score: {e}")
+            logger.warning(
+                "event_score_update_failed guild_id=%s channel_id=%s user_id=%s error=%s",
+                message.guild.id,
+                message.channel.id,
+                message.author.id,
+                e,
+            )
 
     async def setup_hook(self):
         self.tree.on_error = self.on_tree_error
         self.tree.interaction_check = self._app_command_guild_check
 
-        print("--- Loading cogs ---")
+        logger.info("Loading cogs.")
         if not os.path.exists("./cogs"):
             os.makedirs("./cogs")
-            print("Created 'cogs' folder.")
+            logger.info("Created cogs folder.")
 
         if os.path.exists("./cogs"):
             entries = sorted(os.listdir("./cogs"))
@@ -252,11 +272,11 @@ class SecurityBot(commands.Bot):
 
                 try:
                     await self.load_extension(module_name)
-                    print(f"Loaded cog: {entry}")
+                    logger.info("loaded_cog module=%s", module_name)
                 except Exception as e:
-                    print(f"Failed to load {entry}: {e}")
+                    logger.exception("cog_load_failed module=%s error=%s", module_name, e)
         else:
-            print("WARN: 'cogs' folder not found.")
+            logger.warning("cogs folder not found.")
 
     async def on_guild_join(self, guild: discord.Guild):
         if self._is_allowed_guild_id(guild.id):
@@ -269,10 +289,7 @@ class SecurityBot(commands.Bot):
 
     async def on_ready(self):
         logger.info("SecurityBot Online: %s (ID: %s)", self.user, self.user.id)
-        print("\n--- BOT ONLINE ---")
-        print(f"Owner ID: {BOT_OWNER_ID}")
-        print(f"Allowed guilds: {ALLOWED_GUILD_IDS}")
-        print("------------------\n")
+        logger.info("bot_ready owner_id=%s allowed_guilds=%s", BOT_OWNER_ID, ALLOWED_GUILD_IDS)
         await self._leave_unauthorized_guilds()
         await self.change_presence(activity=discord.Game(name="Minecraft .gg/animescafe"))
 
@@ -315,9 +332,11 @@ def create_bot():
                 bot.tree.clear_commands(guild=ctx.guild)
                 bot.tree.copy_global_to(guild=ctx.guild)
                 synced = await bot.tree.sync(guild=ctx.guild)
+                logger.info("slash_sync_success guild_id=%s count=%s actor_id=%s", ctx.guild.id, len(synced), ctx.author.id)
                 await msg.edit(content=f"Pronto. {len(synced)} comandos slash ativos neste servidor.")
             except Exception as e:
-                await msg.edit(content=f"Não consegui sincronizar os comandos: `{e}`")
+                logger.exception("slash_sync_failed guild_id=%s actor_id=%s", ctx.guild.id, ctx.author.id)
+                await msg.edit(content="Não consegui sincronizar os comandos agora. O erro foi registrado.")
         else:
             await ctx.send("Só o dono do bot ou alguém com acesso total pode fazer isso.")
 
@@ -359,4 +378,4 @@ if __name__ == "__main__":
     if validate_required_config():
         asyncio.run(run_bot_with_backoff())
     else:
-        print("CRITICAL: Token not found in .env or config.py")
+        logger.critical("Token not found in .env or config.py")

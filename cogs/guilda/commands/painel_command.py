@@ -62,6 +62,7 @@ async def execute(self, it: discord.Interaction, usuario: discord.Member = None)
 
     if not members_sorted:
         desc += "Nenhum membro ativo encontrado.\n"
+    desc = truncate_discord_text(desc, DISCORD_EMBED_DESCRIPTION_LIMIT, "\n[conteudo truncado]")
 
     embed = discord.Embed(
         title=f"{guild_data['emoji']} {guild_data['name']}",

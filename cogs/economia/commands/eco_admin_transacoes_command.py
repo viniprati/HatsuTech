@@ -30,7 +30,7 @@ async def execute(self, interaction: discord.Interaction, usuario: discord.Membe
 
     embed = discord.Embed(
         title="Transacoes VIP - Kaguya",
-        description="\n".join(lines),
+        description=truncate_discord_text("\n".join(lines), DISCORD_EMBED_DESCRIPTION_LIMIT, "\n[conteudo truncado]"),
         color=discord.Color.gold(),
     )
     embed.set_footer(text=f"Ultimas {len(transactions)} compras | Total exibido: {total} Essência")

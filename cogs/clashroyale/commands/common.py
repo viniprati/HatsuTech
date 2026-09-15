@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 
 import discord
 
 from ..client import ClashRoyaleApiError
 
+log = logging.getLogger(__name__)
 
 CR_COLOR = 0x2B7FFF
 SUCCESS_COLOR = 0x2ECC71
@@ -56,8 +58,10 @@ def safe_ratio(part: int | float, total: int | float) -> float:
 
 
 async def send_api_error(interaction: discord.Interaction, error: Exception):
+    command_name = interaction.command.qualified_name if interaction.command else "desconhecido"
     if isinstance(error, ValueError):
         message = str(error)
+        log.info("clash_validation_error command=%s error=%s", command_name, error)
     elif isinstance(error, ClashRoyaleApiError):
         if error.status == 403:
             message = (
@@ -70,8 +74,23 @@ async def send_api_error(interaction: discord.Interaction, error: Exception):
             message = error.message
         else:
             message = f"Erro na API do Clash Royale: `{error.reason}`."
+        log.warning(
+            "clash_command_api_error command=%s guild_id=%s user_id=%s status=%s reason=%s",
+            command_name,
+            getattr(interaction.guild, "id", None),
+            getattr(interaction.user, "id", None),
+            error.status,
+            error.reason,
+        )
     else:
         message = "Erro inesperado ao consultar o Clash Royale."
+        log.error(
+            "clash_command_unexpected_error command=%s guild_id=%s user_id=%s error=%s",
+            command_name,
+            getattr(interaction.guild, "id", None),
+            getattr(interaction.user, "id", None),
+            error,
+        )
 
     embed = cr_embed("Falha ao consultar Clash Royale", message, ERROR_COLOR)
     if interaction.response.is_done():

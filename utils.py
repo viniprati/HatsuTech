@@ -21,6 +21,10 @@ FULL_ACCESS_ROLE_ID = 1117577222249795725
 
 
 BRT = timezone(timedelta(hours=-3))
+DISCORD_MESSAGE_LIMIT = 2000
+DISCORD_EMBED_TITLE_LIMIT = 256
+DISCORD_EMBED_DESCRIPTION_LIMIT = 4096
+DISCORD_EMBED_FIELD_VALUE_LIMIT = 1024
 
 
 class AntiSpamSystem:
@@ -89,6 +93,14 @@ def process_icon(image_bytes: bytes) -> bytes:
         return output.getvalue()
     except Exception:
         return image_bytes
+
+
+def truncate_discord_text(value: str | None, limit: int, suffix: str = "...") -> str:
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    suffix = suffix[: max(limit, 0)]
+    return text[: max(limit - len(suffix), 0)].rstrip() + suffix
 
 
 def check_owner_or_perm(allowed_role_id=None, **perms):

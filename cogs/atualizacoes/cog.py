@@ -9,7 +9,14 @@ import logging
 from database import updates_col, welcome_dm_logs_col
 
 
-from utils import check_owner_or_perm, ensure_db_online, is_allowed_guild
+from utils import (
+    DISCORD_EMBED_DESCRIPTION_LIMIT,
+    DISCORD_EMBED_TITLE_LIMIT,
+    check_owner_or_perm,
+    ensure_db_online,
+    is_allowed_guild,
+    truncate_discord_text,
+)
 
 try:
     from config import MAIN_GUILD_ID
@@ -94,13 +101,41 @@ class Atualizacoes(commands.Cog):
             "created_at": datetime.datetime.now(datetime.timezone.utc),
         }
         try:
-            await asyncio.to_thread(welcome_dm_logs_col.insert_one, doc)
+            await asyncio.to_thread(
+                welcome_dm_logs_col.update_one,
+                {"type": doc["type"], "guild_id": doc["guild_id"], "user_id": doc["user_id"]},
+                {
+                    "$set": doc,
+                    "$inc": {"attempts": 1},
+                },
+                upsert=True,
+            )
         except Exception as exc:
             log.warning("welcome_dm_log_failed guild_id=%s user_id=%s error=%s", member.guild.id, member.id, exc)
+
+    async def _welcome_dm_already_recorded(self, member: discord.Member) -> bool:
+        try:
+            existing = await asyncio.to_thread(
+                welcome_dm_logs_col.find_one,
+                {
+                    "type": "member_welcome_dm",
+                    "guild_id": str(member.guild.id),
+                    "user_id": str(member.id),
+                    "status": {"$in": ["sent", "dm_closed"]},
+                },
+            )
+            return existing is not None
+        except Exception as exc:
+            log.warning("welcome_dm_lookup_failed guild_id=%s user_id=%s error=%s", member.guild.id, member.id, exc)
+            return False
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         if member.bot or not is_allowed_guild(member.guild.id):
+            return
+
+        if await self._welcome_dm_already_recorded(member):
+            log.info("welcome_dm_skipped_existing guild_id=%s user_id=%s", member.guild.id, member.id)
             return
 
         embed = build_member_welcome_embed(member, self.bot.user)

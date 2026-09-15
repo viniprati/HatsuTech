@@ -10,7 +10,7 @@ import re
 from database import guilds_col
 
 
-from utils import ensure_guild_interaction, get_brt_keys, has_full_access
+from utils import DISCORD_EMBED_DESCRIPTION_LIMIT, ensure_guild_interaction, get_brt_keys, has_full_access, truncate_discord_text
 try:
     from config import CHAT_COUNT_CHANNEL_ID
 except ImportError:

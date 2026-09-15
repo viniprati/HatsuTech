@@ -151,18 +151,18 @@ def _set_online_status(is_online: bool, reason: str | None = None):
     if _db_online == is_online:
         if not is_online and reason and reason != _last_offline_reason:
             _last_offline_reason = reason
-            print(f"MongoDB indisponivel. Motivo: {reason}")
+            log.warning("mongodb_unavailable reason=%s", reason)
         return
     _db_online = is_online
     if is_online:
         _last_offline_reason = None
-        print("MongoDB reconectado com sucesso.")
+        log.info("mongodb_reconnected")
     else:
         _last_offline_reason = reason
         msg = "MongoDB indisponivel. Entrando em modo degradado."
         if reason:
             msg += f" Motivo: {reason}"
-        print(msg)
+        log.warning("mongodb_degraded reason=%s", reason or "-")
 
 
 def is_db_online() -> bool:
@@ -186,7 +186,7 @@ def _build_client() -> MongoClient | None:
 def _connect_once() -> bool:
     global client, db
     if not uri:
-        print("ERRO: MONGO_URI nao encontrada.")
+        log.error("MONGO_URI ausente.")
         _set_online_status(False, "MONGO_URI ausente")
         return False
 
@@ -265,11 +265,11 @@ class ResilientCollection:
         return safe_method
 
 
-print("Conectando ao MongoDB...")
+log.info("mongodb_connecting")
 if _connect_once():
-    print("SUCESSO! Conectado ao banco.")
+    log.info("mongodb_connected")
 else:
-    print("Inicializacao em modo degradado (sem MongoDB).")
+    log.warning("mongodb_starting_degraded")
 
 
 msg_col = ResilientCollection("contador")
@@ -326,9 +326,13 @@ def _initialize_indexes():
                 ([("name", 1)], "guilds_name"),
             ],
             "welcome_dm_logs": [
+                ([("type", 1), ("guild_id", 1), ("user_id", 1)], "welcome_dm_logs_type_guild_user"),
                 ([("guild_id", 1), ("created_at", -1)], "welcome_dm_logs_guild_created"),
                 ([("user_id", 1)], "welcome_dm_logs_user_id"),
                 ([("status", 1)], "welcome_dm_logs_status"),
+            ],
+            "updates": [
+                ([("user_id", 1)], "updates_user_id"),
             ],
         }
         for collection_name, indexes in specs.items():
