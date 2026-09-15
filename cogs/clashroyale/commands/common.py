@@ -15,7 +15,7 @@ ERROR_COLOR = 0xE74C3C
 
 def cr_embed(title: str, description: str | None = None, color: int = CR_COLOR) -> discord.Embed:
     embed = discord.Embed(title=title, description=description, color=color, timestamp=datetime.now(timezone.utc))
-    embed.set_footer(text="Clash Royale • Hatsutech")
+    embed.set_footer(text="Clash Royale • HatsuTech")
     return embed
 
 
