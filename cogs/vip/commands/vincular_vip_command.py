@@ -43,3 +43,16 @@ async def execute(self, it, usuario: discord.Member, cargo: discord.Role):
             upsert=True
         )
     await it.response.send_message(f"✅ Vinculado {cargo.mention} a {usuario.mention}", ephemeral=True)
+    await send_admin_audit_dm(
+        self.bot,
+        category="vip",
+        action="Cargo VIP pessoal vinculado",
+        guild=it.guild,
+        actor=it.user,
+        target=usuario,
+        details={
+            "Comando": "/vincular_vip",
+            "Cargo vinculado": f"{cargo.mention} (`{cargo.id}`)",
+        },
+        source="command:/vincular_vip",
+    )

@@ -49,19 +49,23 @@ async def execute(self, interaction: discord.Interaction, usuario: discord.Membe
     }
     await asyncio.to_thread(eco_admin_logs_col.insert_one, log_doc)
 
-    if events_team_access:
-        await self._send_economy_event_audit_dm(
-            interaction,
-            action="/eco_admin set_saldo",
-            usuario=usuario,
-            moeda=moeda.value,
-            valor=new_value,
-            motivo=motivo,
-            before=before,
-            after=new_value,
-        )
-
     await interaction.response.send_message(
         f"Saldo de `{moeda.value}` de {usuario.mention} definido para `{new_value}`. Motivo: `{motivo}`",
         ephemeral=True,
+    )
+    await send_admin_audit_dm(
+        self.bot,
+        category="economia",
+        action="Saldo definido",
+        guild=interaction.guild,
+        actor=interaction.user,
+        target=usuario,
+        reason=motivo,
+        details={
+            "Comando": "/eco_admin set_saldo",
+            "Moeda": moeda.value,
+            "Alteração": f"`{before}` → `{new_value}`",
+            "Origem do acesso": "Equipe de eventos" if events_team_access else "Administração",
+        },
+        source="command:/eco_admin set_saldo",
     )

@@ -24,6 +24,10 @@ ECONOMY_LOBBY_CHANNEL_IDS = {CHAT_COUNT_CHANNEL_ID}
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
 
 
+def _parse_id_list(raw_value: str) -> tuple[int, ...]:
+    return tuple(dict.fromkeys(int(value.strip()) for value in raw_value.split(",") if value.strip()))
+
+
 try:
     LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))
     VERIFIED_ROLE_ID = int(os.getenv("VERIFIED_ROLE_ID", "0"))
@@ -44,6 +48,16 @@ except ValueError:
     ECONOMY_LOBBY_CHANNEL_IDS = {CHAT_COUNT_CHANNEL_ID}
     ECONOMY_LOBBY_CHANNEL_ID = CHAT_COUNT_CHANNEL_ID
     ECONOMY_LOG_CHANNEL_ID = 0
+
+try:
+    ADMIN_AUDIT_DM_USER_IDS = _parse_id_list(
+        os.getenv("ADMIN_AUDIT_DM_USER_IDS", "983870132063453235,459064218088374293")
+    )
+    if not ADMIN_AUDIT_DM_USER_IDS:
+        raise ValueError("lista vazia")
+except ValueError:
+    logger.warning("ADMIN_AUDIT_DM_USER_IDS inválido. Usando os dois destinatários padrão.")
+    ADMIN_AUDIT_DM_USER_IDS = (983870132063453235, 459064218088374293)
 
 
 

@@ -289,6 +289,7 @@ eco_limits_col = ResilientCollection("eco_limits")
 eco_logs_col = ResilientCollection("eco_logs")
 eco_admin_logs_col = ResilientCollection("eco_admin_logs")
 eco_vip_transactions_col = ResilientCollection("eco_vip_transactions")
+admin_audit_logs_col = ResilientCollection("admin_audit_logs")
 
 
 def _initialize_indexes():
@@ -333,6 +334,11 @@ def _initialize_indexes():
             ],
             "updates": [
                 ([("user_id", 1)], "updates_user_id"),
+            ],
+            "admin_audit_logs": [
+                ([("created_at", -1)], "admin_audit_logs_created_at"),
+                ([("category", 1), ("created_at", -1)], "admin_audit_logs_category_created"),
+                ([("action", 1), ("created_at", -1)], "admin_audit_logs_action_created"),
             ],
         }
         for collection_name, indexes in specs.items():

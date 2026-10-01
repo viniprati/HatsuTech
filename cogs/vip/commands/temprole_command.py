@@ -59,3 +59,19 @@ async def execute(
         f"Expira em: <t:{int(new_end_time)}:F> (<t:{int(new_end_time)}:R>)",
         ephemeral=True
     )
+    if cargo.id in VIP_CONFIG:
+        await send_admin_audit_dm(
+            self.bot,
+            category="vip",
+            action="Temprole VIP definido",
+            guild=it.guild,
+            actor=it.user,
+            target=usuario,
+            details={
+                "Comando": "/temprole",
+                "Cargo": f"{cargo.mention} (`{cargo.id}`)",
+                "Operação": action_msg,
+                "Expiração": f"<t:{int(new_end_time)}:F>",
+            },
+            source="command:/temprole",
+        )

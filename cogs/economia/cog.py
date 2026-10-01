@@ -12,6 +12,7 @@ from discord.app_commands import Choice
 from discord.ext import commands, tasks
 from pymongo import ReturnDocument
 
+from admin_audit import send_admin_audit_dm
 from database import (
     eco_admin_logs_col,
     eco_limits_col,
@@ -42,7 +43,6 @@ except ImportError:
 SERVER_OWNER_FIXED_ID = 459064218088374293
 ECONOMY_EARN_CHANNEL_IDS = {CHAT_COUNT_CHANNEL_ID}
 EVENTS_TEAM_ROLE_ID = 1275958325665599571
-ECONOMY_ADMIN_AUDIT_DM_USER_IDS = (BOT_OWNER_ID, SERVER_OWNER_FIXED_ID)
 
 log = logging.getLogger(__name__)
 
@@ -1455,51 +1455,6 @@ class EconomySystem(commands.Cog):
         roles = getattr(interaction.user, "roles", [])
         return any(getattr(role, "id", None) == EVENTS_TEAM_ROLE_ID for role in roles)
 
-    async def _send_economy_event_audit_dm(
-        self,
-        interaction: discord.Interaction,
-        *,
-        action: str,
-        usuario: discord.Member,
-        moeda: str,
-        valor: int,
-        motivo: str,
-        before: int | None = None,
-        after: int | None = None,
-    ):
-        actor = interaction.user
-        guild = interaction.guild
-        embed = discord.Embed(
-            title="Auditoria de Economia",
-            description="Um membro da equipe de eventos utilizou um comando administrativo de economia.",
-            color=discord.Color.orange(),
-            timestamp=datetime.now(timezone.utc),
-        )
-        embed.add_field(name="Acao", value=action, inline=True)
-        embed.add_field(name="Moeda", value=moeda, inline=True)
-        embed.add_field(name="Valor", value=f"`{int(valor)}`", inline=True)
-        embed.add_field(name="Responsavel", value=f"{actor.mention} (`{actor.id}`)", inline=False)
-        embed.add_field(name="Usuario afetado", value=f"{usuario.mention} (`{usuario.id}`)", inline=False)
-        embed.add_field(name="Motivo", value=motivo[:1024], inline=False)
-        if before is not None and after is not None:
-            embed.add_field(name="Saldo", value=f"`{before}` -> `{after}`", inline=False)
-        if guild:
-            embed.set_footer(text=f"{guild.name} • {guild.id}")
-
-        for user_id in ECONOMY_ADMIN_AUDIT_DM_USER_IDS:
-            try:
-                user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
-                await user.send(embed=embed)
-            except discord.HTTPException as e:
-                log.warning(
-                    "economy_event_audit_dm_failed target_id=%s actor_id=%s user_id=%s action=%s error=%s",
-                    user_id,
-                    actor.id,
-                    usuario.id,
-                    action,
-                    e,
-                )
-
     def _extract_user_id_from_doc(self, doc: dict) -> int | None:
         uid = doc.get("user_id")
         if uid is not None:
@@ -2764,6 +2719,26 @@ class EconomySystem(commands.Cog):
         }
         await asyncio.to_thread(eco_admin_logs_col.insert_one, admin_log_doc)
         counts["admin_logs"] += 1
+
+        target_member = interaction.guild.get_member(target_user_id) if target_user_id else None
+        await send_admin_audit_dm(
+            self.bot,
+            category="economia",
+            action="Reset administrativo da economia",
+            guild=interaction.guild,
+            actor=interaction.user,
+            target=target_member,
+            target_id=target_user_id,
+            target_label="Todos os usuários" if target_mode == "todos" else None,
+            reason="Reset confirmado pelo executor",
+            details={
+                "Escopo": scope,
+                "Registros alterados": (
+                    f"users={counts['users']} • limits={counts['limits']} • logs={counts['logs']}"
+                ),
+            },
+            source="command:/admin_reset",
+        )
 
         await self._log_action(
             interaction.guild,

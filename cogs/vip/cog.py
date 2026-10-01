@@ -6,9 +6,10 @@ import time
 import re
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
+from admin_audit import send_admin_audit_dm
 from database import vip_col, vip_recovery_logs_col, vip_role_presets_col, temp_col
 
 
@@ -687,6 +688,21 @@ class TempRoleAdjustView(ui.View):
             embed = await self.build_embed()
             await interaction.response.edit_message(embed=embed, view=self)
             await interaction.followup.send("Tempo removido. O temprole foi encerrado.", ephemeral=True)
+            if self.role.id in VIP_CONFIG:
+                await send_admin_audit_dm(
+                    interaction.client,
+                    category="vip",
+                    action="Temprole VIP encerrado",
+                    guild=self.member.guild,
+                    actor=interaction.user,
+                    target=self.member,
+                    details={
+                        "Cargo": f"{self.role.mention} (`{self.role.id}`)",
+                        "Expiração anterior": f"<t:{int(current_end)}:F>",
+                        "Tempo removido": self._fmt_remaining(seconds, 0),
+                    },
+                    source="command:/temprole_remover",
+                )
             return
 
         await asyncio.to_thread(
@@ -696,13 +712,44 @@ class TempRoleAdjustView(ui.View):
         )
         embed = await self.build_embed()
         await interaction.response.edit_message(embed=embed, view=self)
+        if self.role.id in VIP_CONFIG:
+            await send_admin_audit_dm(
+                interaction.client,
+                category="vip",
+                action="Temprole VIP reduzido",
+                guild=self.member.guild,
+                actor=interaction.user,
+                target=self.member,
+                details={
+                    "Cargo": f"{self.role.mention} (`{self.role.id}`)",
+                    "Expiração anterior": f"<t:{int(current_end)}:F>",
+                    "Nova expiração": f"<t:{int(new_end)}:F>",
+                    "Tempo removido": self._fmt_remaining(seconds, 0),
+                },
+                source="command:/temprole_remover",
+            )
 
     async def remove_all(self, interaction: discord.Interaction):
+        existing = await self._fetch_doc()
         result = await asyncio.to_thread(temp_col.delete_many, self._query())
         if result and getattr(result, "deleted_count", 0) > 0:
             await self._remove_role_from_member()
         embed = await self.build_embed()
         await interaction.response.edit_message(embed=embed, view=self)
+        if existing and getattr(result, "deleted_count", 0) > 0 and self.role.id in VIP_CONFIG:
+            await send_admin_audit_dm(
+                interaction.client,
+                category="vip",
+                action="Temprole VIP removido",
+                guild=self.member.guild,
+                actor=interaction.user,
+                target=self.member,
+                details={
+                    "Cargo": f"{self.role.mention} (`{self.role.id}`)",
+                    "Expiração anterior": f"<t:{int(float(existing.get('end_time', 0)))}:F>",
+                },
+                source="command:/temprole_remover",
+            )
 
     @ui.button(label="-10m", style=discord.ButtonStyle.secondary, row=0)
     async def minus_10m(self, interaction: discord.Interaction, button: ui.Button):
@@ -897,6 +944,81 @@ class VipSystem(commands.Cog):
             return await guild.fetch_member(uid)
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             return None
+
+    async def _find_manual_role_change_actor(
+        self,
+        member: discord.Member,
+        changed_role_ids: set[int],
+    ) -> tuple[discord.abc.User | None, str | None]:
+        after_time = datetime.now(timezone.utc) - timedelta(seconds=10)
+        for attempt in range(3):
+            await asyncio.sleep(0.75)
+            try:
+                async for entry in member.guild.audit_logs(
+                    limit=8,
+                    action=discord.AuditLogAction.member_role_update,
+                    after=after_time,
+                ):
+                    if getattr(entry.target, "id", None) != member.id:
+                        continue
+                    audit_roles = {
+                        role.id
+                        for diff in (entry.before, entry.after)
+                        for role in (getattr(diff, "roles", None) or [])
+                    }
+                    if changed_role_ids & audit_roles:
+                        return entry.user, entry.reason
+            except discord.Forbidden:
+                log.warning("vip_manual_audit_missing_permission guild_id=%s", member.guild.id)
+                return None, None
+            except discord.HTTPException as exc:
+                log.warning(
+                    "vip_manual_audit_lookup_failed guild_id=%s status=%s attempt=%s",
+                    member.guild.id,
+                    exc.status,
+                    attempt + 1,
+                )
+        return None, None
+
+    async def _audit_manual_vip_role_change(self, before: discord.Member, after: discord.Member):
+        before_role_ids = {role.id for role in before.roles}
+        after_role_ids = {role.id for role in after.roles}
+        added_ids = (after_role_ids - before_role_ids) & set(VIP_CONFIG)
+        removed_ids = (before_role_ids - after_role_ids) & set(VIP_CONFIG)
+        if not added_ids and not removed_ids:
+            return
+
+        actor, reason = await self._find_manual_role_change_actor(after, added_ids | removed_ids)
+        if actor is None or getattr(actor, "bot", False):
+            return
+        if self.bot.user and actor.id == self.bot.user.id:
+            return
+
+        role_lines = []
+        for role_id in sorted(added_ids):
+            role = after.guild.get_role(role_id)
+            role_lines.append(f"Adicionado: {role.mention if role else role_id} (`{role_id}`)")
+        for role_id in sorted(removed_ids):
+            role = after.guild.get_role(role_id)
+            role_lines.append(f"Removido: {role.mention if role else role_id} (`{role_id}`)")
+
+        if added_ids and removed_ids:
+            action = "VIP alterado manualmente"
+        elif added_ids:
+            action = "VIP concedido manualmente"
+        else:
+            action = "VIP removido manualmente"
+        await send_admin_audit_dm(
+            self.bot,
+            category="vip",
+            action=action,
+            guild=after.guild,
+            actor=actor,
+            target=after,
+            reason=reason or "Alteração manual de cargo no Discord",
+            details={"Cargos": "\n".join(role_lines)},
+            source="discord_audit_log:member_role_update",
+        )
 
     async def enviar_log(self, g, t, f, c=discord.Color.blue()):
         ch = g.get_channel(LOG_CARGOS_ID)
@@ -1378,6 +1500,7 @@ class VipSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
+        await self._audit_manual_vip_role_change(before, after)
         if after.id == BOT_OWNER_ID:
             return
         before_role_ids = {role.id for role in before.roles}
