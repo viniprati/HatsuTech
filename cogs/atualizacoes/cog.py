@@ -169,5 +169,15 @@ class Atualizacoes(commands.Cog):
 
         await execute(self, interaction, titulo, mensagem, imagem)
 
+    @app_commands.command(
+        name="anuncio_loja",
+        description="Envia o anúncio definitivo da Loja Global de VIPs por DM (Admin/Owner).",
+    )
+    @check_owner_or_perm(administrator=True)
+    async def anuncio_loja(self, interaction: discord.Interaction):
+        from .commands.anuncio_loja_command import execute
+
+        await execute(self, interaction)
+
 async def setup(bot):
     await bot.add_cog(Atualizacoes(bot))
