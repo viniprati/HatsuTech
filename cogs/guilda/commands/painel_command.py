@@ -69,6 +69,6 @@ async def execute(self, it: discord.Interaction, usuario: discord.Member = None)
         description=desc,
         color=discord.Color.gold()
     )
-    embed.set_footer(text=f"Membros ativos: {len(members_sorted)}/{get_guild_member_limit(guild_data)}")
+    embed.set_footer(text=f"Membros ativos: {len(members_sorted)}/10")
 
     await it.followup.send(embed=embed)

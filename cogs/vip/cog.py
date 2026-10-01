@@ -9,19 +9,17 @@ import logging
 from datetime import datetime, timezone
 
 
-from database import eco_entitlements_col, vip_col, vip_recovery_logs_col, vip_role_presets_col, temp_col
+from database import vip_col, vip_recovery_logs_col, vip_role_presets_col, temp_col
 
 
 from utils import (
     DISCORD_EMBED_DESCRIPTION_LIMIT,
-    VIP_MAX_MEMBER_LIMIT,
     check_owner_or_perm,
     process_icon,
     BOT_OWNER_ID,
     has_full_access,
     ensure_db_online,
     ensure_guild_interaction,
-    get_vip_member_limit,
     truncate_discord_text,
 )
 
@@ -226,7 +224,7 @@ VIP_CONFIG = {
     MONARCH_VIP_ID: 30
 }
 
-RESTORE_MEMBER_LIMIT = VIP_MAX_MEMBER_LIMIT
+RESTORE_MEMBER_LIMIT = 20
 RESTORE_MEMBER_DELAY_SECONDS = 0.25
 RECONCILE_ABSENT_VIP_LIMIT_PER_RUN = 5
 RECONCILE_ABSENT_VIP_DELAY_SECONDS = 2.0
@@ -280,31 +278,20 @@ class VipColorModal(ui.Modal, title="Mudar Cor"):
             return await interaction.response.send_message("❌ Não foi possível atualizar as cores do cargo.", ephemeral=True)
 
 class VipMemberSelect(ui.UserSelect):
-    def __init__(self, cog, role, limit):
+    def __init__(self, role, limit):
         super().__init__(placeholder="➕ Adicionar membros...", min_values=1, max_values=25)
-        self.cog = cog
-        self.role = role
-        self.limit = limit
+        self.role = role; self.limit = limit
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        async with self.cog._get_vip_lock(interaction.user.id, interaction.guild.id):
-            new_members = [member for member in self.values if self.role not in member.roles]
-            if (len(self.role.members) + len(new_members)) > self.limit:
-                return await interaction.followup.send("🚫 Limite excedido.", ephemeral=True)
-            added = []
-            for member in new_members:
+        if (len(self.role.members) + len(self.values)) > self.limit:
+            return await interaction.followup.send("🚫 Limite excedido.", ephemeral=True)
+        added = []
+        for m in self.values:
+            if self.role not in m.roles:
                 try:
-                    await member.add_roles(self.role, reason=f"VIP painel: adicionado por {interaction.user.id}")
-                    added.append(member.mention)
-                except (discord.Forbidden, discord.NotFound, discord.HTTPException) as error:
-                    log.warning(
-                        "vip_member_add_failed guild_id=%s owner_id=%s member_id=%s role_id=%s error=%s",
-                        interaction.guild.id,
-                        interaction.user.id,
-                        member.id,
-                        self.role.id,
-                        error,
-                    )
+                    await m.add_roles(self.role)
+                    added.append(m.mention)
+                except: pass
         await interaction.followup.send(f"✅ Adicionado: {', '.join(added)}" if added else "Ninguém novo.", ephemeral=True)
 
 class VipMemberRemoveSelect(ui.UserSelect):
@@ -329,7 +316,7 @@ class VipMemberRemoveSelect(ui.UserSelect):
 class VipMembersView(ui.View):
     def __init__(self, cog, role, limit):
         super().__init__(timeout=None)
-        self.add_item(VipMemberSelect(cog, role, limit))
+        self.add_item(VipMemberSelect(role, limit))
         self.add_item(VipMemberRemoveSelect(cog, role))
 
 
@@ -764,17 +751,11 @@ class VipSystem(commands.Cog):
             self.reconcile_absent_vips.cancel()
 
 
-    def get_base_vip_limit(self, member):
+    def get_vip_limit(self, member):
         limit = 0
         for vid, max_m in VIP_CONFIG.items():
             if any(r.id == vid for r in member.roles) and max_m > limit: limit = max_m
         return limit
-
-    async def get_vip_limit(self, member):
-        base_limit = self.get_base_vip_limit(member)
-        entitlement_id = f"vip_slots:{member.guild.id}:{member.id}"
-        entitlement = await asyncio.to_thread(eco_entitlements_col.find_one, {"_id": entitlement_id}) or {}
-        return get_vip_member_limit(base_limit, entitlement.get("extra_slots", 0))
 
     def is_monarch(self, member):
         return any(r.id == MONARCH_VIP_ID for r in member.roles) or has_full_access(member)

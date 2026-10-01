@@ -123,12 +123,36 @@ def validate_secret_literals(file: Path, errors: list[str]) -> None:
             errors.append(f"{file}: possible committed secret literal")
 
 
+def validate_global_vip_store_contract(errors: list[str]) -> None:
+    file = ROOT / "cogs" / "economia" / "cog.py"
+    text = file.read_text(encoding="utf-8")
+    required = {
+        'VIP_STORE_MAX_STOCK = 5': "global VIP stock must initialize with five units",
+        'name="loja_global"': "global VIP store command is missing",
+        'STORE_AVAILABLE_EMOJI = "<:certo:1555211164114223115>"': "available status emoji is missing",
+        'STORE_UNAVAILABLE_EMOJI = "<:errado:1555211162399019009>"': "unavailable status emoji is missing",
+    }
+    for snippet, message in required.items():
+        if snippet not in text:
+            errors.append(f"{file}: {message}")
+
+    forbidden = {
+        'value="guild_slots"': "guild slots must not ship in this release",
+        'value="vip_slots"': "VIP role slots must not ship in this release",
+        'discord.SelectOption(label="VIPs", value="vips"': "VIP purchases must stay out of the legacy store",
+    }
+    for snippet, message in forbidden.items():
+        if snippet in text:
+            errors.append(f"{file}: {message}")
+
+
 def main() -> int:
     errors: list[str] = []
     for file in iter_files(PYTHON_TARGETS, (".py",)):
         validate_embed_limits(file, errors)
     for file in iter_files(TEXT_TARGETS, (".py", ".yml", ".yaml", ".md", ".txt", ".toml", ".json")):
         validate_secret_literals(file, errors)
+    validate_global_vip_store_contract(errors)
 
     if errors:
         print("Static contract validation failed:")

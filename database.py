@@ -289,7 +289,6 @@ eco_limits_col = ResilientCollection("eco_limits")
 eco_logs_col = ResilientCollection("eco_logs")
 eco_admin_logs_col = ResilientCollection("eco_admin_logs")
 eco_vip_transactions_col = ResilientCollection("eco_vip_transactions")
-eco_entitlements_col = ResilientCollection("eco_entitlements")
 
 
 def _initialize_indexes():
@@ -320,10 +319,6 @@ def _initialize_indexes():
                 ([("guild_id", 1), ("created_at", -1)], "eco_vip_transactions_guild_created"),
                 ([("buyer_id", 1), ("created_at", -1)], "eco_vip_transactions_buyer_created"),
                 ([("sku", 1)], "eco_vip_transactions_sku"),
-            ],
-            "eco_entitlements": [
-                ([("type", 1), ("guild_id", 1), ("user_id", 1)], "eco_entitlements_type_guild_user"),
-                ([("updated_at", -1)], "eco_entitlements_updated_at"),
             ],
             "guilds": [
                 ([("members.user_id", 1)], "guilds_members_user_id"),

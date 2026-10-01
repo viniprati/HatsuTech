@@ -151,16 +151,13 @@ async def _build_eco_help_embeds(self, guild: discord.Guild) -> dict[str, discor
     for sku, item in SHOP_ITEMS_DEFAULT.items():
         shop_lines.append(f"> - **{format_vip_name(sku)}**: {format_currency_amount('essencia', item['price_essencia'])}")
     shop = discord.Embed(
-        title=f"⏜⌢ ᐥ{SHOP_SECTION_EMOJI}  Loja de VIPs",
+        title=f"⏜⌢ ᐥ{SHOP_SECTION_EMOJI}  Loja Global de VIPs",
         description=(
-            "*Você pode usar Essência para comprar VIPs temporários.*\n\n"
+            "*Use `/eco loja_global` para comprar VIPs temporários em um estoque único para todos os servidores.*\n\n"
             "**Tabela de valores:**\n"
             + "\n".join(shop_lines)
             + "\n\n"
             "*Os VIPs comprados ou ganhos ficam guardados no inventário. Eles não ativam automaticamente.*\n\n"
-            "**Expansões permanentes:**\n"
-            "> A loja também oferece pacotes de `+1` a `+5` vagas para guildas e cargos VIP pessoais.\n"
-            "> Guildas podem chegar a `40` membros e cargos VIP pessoais a `50` membros.\n\n"
             "> Use `/eco inventario` para ativar ou doar um VIP. Ao ativar, o tempo começa imediatamente. "
             "__Doações são irreversíveis.__"
         ),
@@ -197,7 +194,8 @@ async def _build_eco_help_embeds(self, guild: discord.Guild) -> dict[str, discor
         description=(
             "> `/eco saldo` - mostra seu saldo e progresso.\n"
             "> `/eco inventario` - mostra moedas, caixas e VIPs guardados.\n"
-            "> `/eco loja` - abre a loja de lootboxes e VIPs.\n"
+            "> `/eco loja` - abre a loja de lootboxes, chances e inventário.\n"
+            "> `/eco loja_global` - abre a loja global de VIPs.\n"
             "> `/eco abrir_comum` - abre Lootbox Comum do inventário.\n"
             "> `/eco abrir_premium` - abre Lootbox Premium do inventário.\n"
             "> `/eco ajuda` - mostra este guia.\n"
