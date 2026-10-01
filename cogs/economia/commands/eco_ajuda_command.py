@@ -158,6 +158,9 @@ async def _build_eco_help_embeds(self, guild: discord.Guild) -> dict[str, discor
             + "\n".join(shop_lines)
             + "\n\n"
             "*Os VIPs comprados ou ganhos ficam guardados no inventário. Eles não ativam automaticamente.*\n\n"
+            "**Expansões permanentes:**\n"
+            "> A loja também oferece pacotes de `+1` a `+5` vagas para guildas e cargos VIP pessoais.\n"
+            "> Guildas podem chegar a `40` membros e cargos VIP pessoais a `50` membros.\n\n"
             "> Use `/eco inventario` para ativar ou doar um VIP. Ao ativar, o tempo começa imediatamente. "
             "__Doações são irreversíveis.__"
         ),

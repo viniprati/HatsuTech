@@ -15,8 +15,12 @@ async def execute(self, it: discord.Interaction, usuario: discord.Member):
         return await it.response.send_message("❌ Apenas o líder pode convidar.", ephemeral=True)
 
     active_members = await self.get_active_member_records(it.guild, guild_data)
-    if len(active_members) >= 10:
-        return await it.response.send_message("❌ Sua guilda já está cheia (Max 10).", ephemeral=True)
+    member_limit = get_guild_member_limit(guild_data)
+    if len(active_members) >= member_limit:
+        return await it.response.send_message(
+            f"❌ Sua guilda já está cheia (Max {member_limit}).",
+            ephemeral=True,
+        )
 
     if self.get_user_guild(usuario.id):
         return await it.response.send_message(f"❌ {usuario.display_name} já está em uma guilda.", ephemeral=True)

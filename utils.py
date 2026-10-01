@@ -25,6 +25,41 @@ DISCORD_MESSAGE_LIMIT = 2000
 DISCORD_EMBED_TITLE_LIMIT = 256
 DISCORD_EMBED_DESCRIPTION_LIMIT = 4096
 DISCORD_EMBED_FIELD_VALUE_LIMIT = 1024
+GUILD_BASE_MEMBER_LIMIT = 10
+GUILD_MAX_MEMBER_LIMIT = 40
+VIP_MAX_MEMBER_LIMIT = 50
+STORE_SLOT_PRICES = {
+    1: 1000,
+    2: 1900,
+    3: 2800,
+    4: 3700,
+    5: 4500,
+}
+
+
+def get_store_slot_price(slots: int) -> int | None:
+    try:
+        return STORE_SLOT_PRICES.get(int(slots))
+    except (TypeError, ValueError):
+        return None
+
+
+def get_guild_member_limit(guild_data: dict | None) -> int:
+    raw_limit = (guild_data or {}).get("member_limit", GUILD_BASE_MEMBER_LIMIT)
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        limit = GUILD_BASE_MEMBER_LIMIT
+    return max(GUILD_BASE_MEMBER_LIMIT, min(limit, GUILD_MAX_MEMBER_LIMIT))
+
+
+def get_vip_member_limit(base_limit: int, extra_slots: int = 0) -> int:
+    try:
+        base = max(0, int(base_limit))
+        extra = max(0, int(extra_slots))
+    except (TypeError, ValueError):
+        return 0
+    return min(base + extra, VIP_MAX_MEMBER_LIMIT)
 
 
 class AntiSpamSystem:

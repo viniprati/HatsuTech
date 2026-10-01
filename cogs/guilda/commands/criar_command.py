@@ -25,6 +25,7 @@ async def execute(self, it: discord.Interaction, nome: str, emoji: str):
         "leader_id": it.user.id,
         "created_at": datetime.datetime.now(),
         "total_xp": 0,
+        "member_limit": GUILD_BASE_MEMBER_LIMIT,
         "members": [
             {
                 "user_id": it.user.id,

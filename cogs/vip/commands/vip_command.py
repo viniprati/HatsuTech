@@ -52,7 +52,7 @@ async def execute(self, it, cor_primaria: str = None, cor_secundaria: str = None
     if not await ensure_db_online(it, "o comando /vip"):
         return
 
-    has_common = self.get_vip_limit(it.user) > 0 or has_full_access(it.user)
+    has_common = await self.get_vip_limit(it.user) > 0 or has_full_access(it.user)
     has_highlight = self.is_monarch(it.user)
     if not has_common and not has_highlight:
         return await it.response.send_message("🚫 Você não possui VIP.", ephemeral=True)
@@ -84,7 +84,7 @@ async def open_common_panel(self, it, cor_primaria: str = None, cor_secundaria: 
         return
     if not await ensure_db_online(it, "a opção Cargo comum do /vip"):
         return
-    limit = self.get_vip_limit(it.user)
+    limit = await self.get_vip_limit(it.user)
     if limit == 0 and not has_full_access(it.user):
         return await it.followup.send("🚫 Você não possui VIP.", ephemeral=True)
     position_note = None

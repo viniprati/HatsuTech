@@ -14,22 +14,31 @@ from pymongo import ReturnDocument
 
 from database import (
     eco_admin_logs_col,
+    eco_entitlements_col,
     eco_limits_col,
     eco_logs_col,
     eco_settings_col,
     eco_shop_col,
     eco_users_col,
     eco_vip_transactions_col,
+    guilds_col,
     is_db_online,
     temp_col,
 )
 from utils import (
     DISCORD_EMBED_DESCRIPTION_LIMIT,
     BOT_OWNER_ID,
+    GUILD_BASE_MEMBER_LIMIT,
+    GUILD_MAX_MEMBER_LIMIT,
+    STORE_SLOT_PRICES,
+    VIP_MAX_MEMBER_LIMIT,
     check_owner_or_perm,
     ensure_db_online,
     ensure_guild_interaction,
     get_data_guild_id,
+    get_guild_member_limit,
+    get_store_slot_price,
+    get_vip_member_limit,
     truncate_discord_text,
 )
 
@@ -49,8 +58,8 @@ log = logging.getLogger(__name__)
 BERSERK_VIP_ID = 999723165225857074
 MUGETSU_VIP_ID = 1121511055059861524
 MONARCH_VIP_ID = 1351596017631494195
-VIP_STORE_MAX_STOCK = 1
-VIP_STORE_POLICY_VERSION = "vip_inventory_stock_1_v1"
+VIP_STORE_MAX_STOCK = 5
+VIP_STORE_POLICY_VERSION = "vip_inventory_global_stock_5_v2"
 VIP_TRANSACTION_BACKFILL_VERSION = "vip_transactions_from_shop_buy_v1"
 
 SHOP_ITEMS_DEFAULT = {
@@ -287,6 +296,8 @@ class EcoStoreCategorySelect(discord.ui.Select):
         options = [
             discord.SelectOption(label="Lootboxes", value="lootboxes", description="Compre caixas com moedas", emoji=LOOTBOX_EMOJI),
             discord.SelectOption(label="VIPs", value="vips", description="Compre VIPs temporários", emoji=VIP_EMOJIS["vip_berserk_30d"]),
+            discord.SelectOption(label="Guilda", value="guild_slots", description="Aumente o limite de membros", emoji="🏰"),
+            discord.SelectOption(label="Cargo VIP", value="vip_slots", description="Aumente o limite do cargo pessoal", emoji="👑"),
             discord.SelectOption(label="Chances", value="chances", description="Veja odds das lootboxes", emoji=LOOTBOX_EMOJI),
             discord.SelectOption(label="Inventario", value="inventory", description="Veja moedas e caixas", emoji=LOOTBOX_EMOJI),
         ]
@@ -297,6 +308,32 @@ class EcoStoreCategorySelect(discord.ui.Select):
         view.current_category = self.values[0]
         view.last_feedback = None
         view.sync_controls()
+        await interaction.response.edit_message(embed=await view.build_embed(interaction.guild), view=view)
+
+
+class SlotPackageSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label=f"+{slots} vaga{'s' if slots > 1 else ''}",
+                value=str(slots),
+                description=f"{price:,} essencias".replace(",", "."),
+            )
+            for slots, price in STORE_SLOT_PRICES.items()
+        ]
+        super().__init__(
+            placeholder="Escolha o pacote de vagas",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=1,
+            disabled=True,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        view: EcoStoreView = self.view
+        view.selected_slots = int(self.values[0])
+        view.last_feedback = None
         await interaction.response.edit_message(embed=await view.build_embed(interaction.guild), view=view)
 
 
@@ -332,8 +369,11 @@ class EcoStoreView(discord.ui.View):
         self.author_id = author_id
         self.guild_id = guild_id
         self.current_category = "lootboxes"
+        self.selected_slots = 1
         self.last_feedback: str | None = None
         self.add_item(EcoStoreCategorySelect())
+        self.slot_package_select = SlotPackageSelect()
+        self.add_item(self.slot_package_select)
         self.sync_controls()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -347,10 +387,12 @@ class EcoStoreView(discord.ui.View):
         vips = self.current_category == "vips"
         chances = self.current_category == "chances"
         inventory = self.current_category == "inventory"
+        capacity = self.current_category in {"guild_slots", "vip_slots"}
 
+        self.slot_package_select.disabled = not capacity
         self.action_one.disabled = inventory
         self.action_two.disabled = inventory
-        self.action_three.disabled = inventory
+        self.action_three.disabled = inventory or capacity
 
         if loot:
             self.action_one.label = "Comprar Comum"
@@ -364,6 +406,10 @@ class EcoStoreView(discord.ui.View):
             self.action_one.label = "Odds Comum"
             self.action_two.label = "Odds Premium"
             self.action_three.label = "Atualizar"
+        elif capacity:
+            self.action_one.label = "Comprar expansao"
+            self.action_two.label = "Atualizar"
+            self.action_three.label = "-"
         else:
             self.action_one.label = "-"
             self.action_two.label = "-"
@@ -383,6 +429,20 @@ class EcoStoreView(discord.ui.View):
         if not interaction.response.is_done():
             await interaction.response.defer()
         self.last_feedback = await self.cog._purchase_item_result(interaction, sku)
+        await self._refresh_message(interaction)
+        try:
+            await interaction.followup.send(self.last_feedback, ephemeral=True)
+        except discord.HTTPException:
+            pass
+
+    async def _run_capacity_purchase(self, interaction: discord.Interaction, capacity_type: str):
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+        self.last_feedback = await self.cog._purchase_capacity_result(
+            interaction,
+            capacity_type,
+            self.selected_slots,
+        )
         await self._refresh_message(interaction)
         try:
             await interaction.followup.send(self.last_feedback, ephemeral=True)
@@ -425,6 +485,8 @@ class EcoStoreView(discord.ui.View):
         title_map = {
             "lootboxes": "Loja - Lootboxes",
             "vips": "Loja - VIPs",
+            "guild_slots": "Loja - Expansao da Guilda",
+            "vip_slots": "Loja - Expansao do Cargo VIP",
             "chances": "Loja - Chances",
             "inventory": "Loja - Minhas Moedas e Inventario",
         }
@@ -466,6 +528,54 @@ class EcoStoreView(discord.ui.View):
                 "Use `/eco inventario` para ativar ou doar.\n\n"
                 + "\n\n".join(lines)
             )
+        elif self.current_category == "guild_slots":
+            guild_data = await asyncio.to_thread(guilds_col.find_one, {"leader_id": self.author_id})
+            current_limit = get_guild_member_limit(guild_data)
+            selected_price = get_store_slot_price(self.selected_slots) or 0
+            projected_limit = current_limit + self.selected_slots
+            price_lines = [
+                f"`+{slots}` vagas — {format_currency_amount('essencia', price)}"
+                for slots, price in STORE_SLOT_PRICES.items()
+            ]
+            embed.description = (
+                "Expansao permanente para a guilda liderada por voce.\n\n"
+                + "\n".join(price_lines)
+                + f"\n\nLimite atual: `{current_limit}/{GUILD_MAX_MEMBER_LIMIT}`\n"
+                f"Apos a compra: `{projected_limit}/{GUILD_MAX_MEMBER_LIMIT}`\n"
+                f"Pacote selecionado: `+{self.selected_slots}` por "
+                f"{format_currency_amount('essencia', selected_price)}"
+            )
+            if guild_data is None:
+                embed.description += "\n\nVoce precisa ser lider de uma guilda para comprar."
+            elif projected_limit > GUILD_MAX_MEMBER_LIMIT:
+                embed.description += "\n\nEste pacote ultrapassa o limite permitido."
+        elif self.current_category == "vip_slots":
+            member = guild.get_member(self.author_id)
+            base_limit = self.cog._get_member_base_vip_limit(member)
+            extra_slots = await asyncio.to_thread(
+                self.cog._get_vip_extra_slots,
+                self.author_id,
+                self.guild_id,
+            )
+            current_limit = get_vip_member_limit(base_limit, extra_slots)
+            selected_price = get_store_slot_price(self.selected_slots) or 0
+            projected_limit = current_limit + self.selected_slots
+            price_lines = [
+                f"`+{slots}` vagas — {format_currency_amount('essencia', price)}"
+                for slots, price in STORE_SLOT_PRICES.items()
+            ]
+            embed.description = (
+                "Expansao permanente para o seu cargo VIP personalizado neste servidor.\n\n"
+                + "\n".join(price_lines)
+                + f"\n\nLimite atual: `{current_limit}/{VIP_MAX_MEMBER_LIMIT}`\n"
+                f"Apos a compra: `{projected_limit}/{VIP_MAX_MEMBER_LIMIT}`\n"
+                f"Pacote selecionado: `+{self.selected_slots}` por "
+                f"{format_currency_amount('essencia', selected_price)}"
+            )
+            if base_limit <= 0:
+                embed.description += "\n\nVoce precisa possuir Berserk, Mugetsu ou Monarch para comprar."
+            elif projected_limit > VIP_MAX_MEMBER_LIMIT:
+                embed.description += "\n\nEste pacote ultrapassa o limite permitido."
         elif self.current_category == "chances":
             common_lines = await asyncio.to_thread(self.cog._build_odds_lines, "loot_common", guild)
             premium_lines = await asyncio.to_thread(self.cog._build_odds_lines, "loot_premium", guild)
@@ -487,7 +597,7 @@ class EcoStoreView(discord.ui.View):
             embed.set_footer(text=self.last_feedback)
         return embed
 
-    @discord.ui.button(label="Acao 1", style=discord.ButtonStyle.primary, row=1)
+    @discord.ui.button(label="Acao 1", style=discord.ButtonStyle.primary, row=2)
     async def action_one(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_category == "lootboxes":
             modal = LootboxQuantityModal(self, "loot_common", interaction)
@@ -496,9 +606,11 @@ class EcoStoreView(discord.ui.View):
             return await self._run_vip_purchase(interaction, "vip_berserk_30d")
         elif self.current_category == "chances":
             self.last_feedback = "Odds da Lootbox Comum exibidas nesta pagina."
+        elif self.current_category in {"guild_slots", "vip_slots"}:
+            return await self._run_capacity_purchase(interaction, self.current_category)
         await self._refresh_message(interaction)
 
-    @discord.ui.button(label="Acao 2", style=discord.ButtonStyle.primary, row=1)
+    @discord.ui.button(label="Acao 2", style=discord.ButtonStyle.primary, row=2)
     async def action_two(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_category == "lootboxes":
             modal = LootboxQuantityModal(self, "loot_premium", interaction)
@@ -509,7 +621,7 @@ class EcoStoreView(discord.ui.View):
             self.last_feedback = "Odds da Lootbox Premium exibidas nesta pagina."
         await self._refresh_message(interaction)
 
-    @discord.ui.button(label="Acao 3", style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(label="Acao 3", style=discord.ButtonStyle.success, row=2)
     async def action_three(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_category == "lootboxes":
             self.last_feedback = "Loja atualizada."
@@ -1101,6 +1213,26 @@ class EconomySystem(commands.Cog):
 
     def _limits_doc_id(self, user_id: int, guild_id: int) -> str:
         return f"{self._gid(guild_id)}:{self._uid(user_id)}"
+
+    def _vip_slots_doc_id(self, user_id: int, guild_id: int) -> str:
+        return f"vip_slots:{int(guild_id)}:{self._uid(user_id)}"
+
+    def _get_member_base_vip_limit(self, member: discord.Member | None) -> int:
+        if member is None:
+            return 0
+        limits = {
+            BERSERK_VIP_ID: 20,
+            MUGETSU_VIP_ID: 25,
+            MONARCH_VIP_ID: 30,
+        }
+        return max((limits.get(role.id, 0) for role in getattr(member, "roles", [])), default=0)
+
+    def _get_vip_extra_slots(self, user_id: int, guild_id: int) -> int:
+        data = eco_entitlements_col.find_one({"_id": self._vip_slots_doc_id(user_id, guild_id)}) or {}
+        try:
+            return max(0, int(data.get("extra_slots", 0)))
+        except (TypeError, ValueError):
+            return 0
 
     def _ensure_user_doc(self, user_id: int, guild_id: int):
         eco_users_col.update_one(
@@ -1753,6 +1885,7 @@ class EconomySystem(commands.Cog):
         created_at = datetime.now(timezone.utc)
         document = {
             "type": "vip_purchase",
+            "operation_id": str(interaction.id),
             "source": "kaguya_shop",
             "status": "completed",
             "guild_id": self._gid(interaction.guild.id),
@@ -2272,6 +2405,199 @@ class EconomySystem(commands.Cog):
             "Elas foram adicionadas ao seu inventario."
         )
 
+    async def _refund_capacity_purchase(
+        self,
+        interaction: discord.Interaction,
+        price: int,
+        operation_id: str,
+        capacity_type: str,
+        reason: str,
+    ) -> bool:
+        refunded = await asyncio.to_thread(
+            self._credit_user,
+            interaction.user.id,
+            interaction.guild.id,
+            {"essencia": price},
+        )
+        log.warning(
+            "economy_capacity_purchase_rolled_back operation_id=%s capacity_type=%s guild_id=%s user_id=%s reason=%s refunded=%s",
+            operation_id,
+            capacity_type,
+            interaction.guild.id,
+            interaction.user.id,
+            reason,
+            refunded,
+        )
+        return refunded
+
+    async def _purchase_capacity_result(
+        self,
+        interaction: discord.Interaction,
+        capacity_type: str,
+        slots: int,
+    ) -> str:
+        operation_id = str(interaction.id)
+        price = get_store_slot_price(slots)
+        if capacity_type not in {"guild_slots", "vip_slots"} or price is None:
+            return "Pacote de expansao invalido."
+        if not is_db_online():
+            return "Banco de dados indisponivel no momento. Nenhum saldo foi consumido."
+
+        now = self._now_ts()
+        cooldown_key = (interaction.guild.id, interaction.user.id, f"capacity_buy:{capacity_type}")
+        if now - self.action_last_used.get(cooldown_key, 0) < ECONOMY_ACTION_COOLDOWN_SECONDS:
+            return "Aguarde alguns segundos para tentar novamente."
+        self.action_last_used[cooldown_key] = now
+
+        if capacity_type == "guild_slots":
+            target = await asyncio.to_thread(guilds_col.find_one, {"leader_id": interaction.user.id})
+            if not target:
+                return "Voce precisa ser lider de uma guilda para comprar esta expansao."
+            current_limit = get_guild_member_limit(target)
+            max_limit = GUILD_MAX_MEMBER_LIMIT
+            target_label = str(target.get("_id"))
+        else:
+            base_limit = self._get_member_base_vip_limit(interaction.user)
+            if base_limit <= 0:
+                return "Voce precisa possuir Berserk, Mugetsu ou Monarch para comprar esta expansao."
+            current_extra = await asyncio.to_thread(
+                self._get_vip_extra_slots,
+                interaction.user.id,
+                interaction.guild.id,
+            )
+            current_limit = get_vip_member_limit(base_limit, current_extra)
+            max_limit = VIP_MAX_MEMBER_LIMIT
+            target_label = self._vip_slots_doc_id(interaction.user.id, interaction.guild.id)
+
+        if current_limit + slots > max_limit:
+            available = max(max_limit - current_limit, 0)
+            return (
+                f"Essa compra ultrapassaria o limite de `{max_limit}`. "
+                f"Voce ainda pode adicionar `{available}` vaga(s)."
+            )
+
+        debited = await asyncio.to_thread(
+            self._debit_user_atomic,
+            interaction.user.id,
+            interaction.guild.id,
+            "essencia",
+            price,
+        )
+        if not debited:
+            if not is_db_online():
+                return "Banco indisponivel durante a compra. Nenhum saldo foi consumido."
+            balance = await asyncio.to_thread(self._get_user_doc, interaction.user.id, interaction.guild.id)
+            missing = max(price - int(balance.get("essencia", 0)), 0)
+            return f"Saldo insuficiente: faltam {format_currency_amount('essencia', missing)}."
+
+        updated = None
+        if capacity_type == "guild_slots":
+            updated = await asyncio.to_thread(
+                guilds_col.find_one_and_update,
+                {
+                    "_id": target["_id"],
+                    "leader_id": interaction.user.id,
+                    "$expr": {
+                        "$lte": [
+                            {"$ifNull": ["$member_limit", GUILD_BASE_MEMBER_LIMIT]},
+                            GUILD_MAX_MEMBER_LIMIT - slots,
+                        ]
+                    },
+                },
+                [
+                    {
+                        "$set": {
+                            "member_limit": {
+                                "$add": [{"$ifNull": ["$member_limit", GUILD_BASE_MEMBER_LIMIT]}, slots]
+                            },
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                    }
+                ],
+                return_document=ReturnDocument.AFTER,
+            )
+            new_limit = get_guild_member_limit(updated) if updated else current_limit
+        else:
+            entitlement_id = self._vip_slots_doc_id(interaction.user.id, interaction.guild.id)
+            ensured = await asyncio.to_thread(
+                eco_entitlements_col.update_one,
+                {"_id": entitlement_id},
+                {
+                    "$setOnInsert": {
+                        "type": "vip_slots",
+                        "guild_id": str(interaction.guild.id),
+                        "user_id": self._uid(interaction.user.id),
+                        "extra_slots": 0,
+                        "created_at": datetime.now(timezone.utc),
+                    }
+                },
+                upsert=True,
+            )
+            if getattr(ensured, "acknowledged", False):
+                max_extra_before_purchase = VIP_MAX_MEMBER_LIMIT - base_limit - slots
+                updated = await asyncio.to_thread(
+                    eco_entitlements_col.find_one_and_update,
+                    {"_id": entitlement_id, "extra_slots": {"$lte": max_extra_before_purchase}},
+                    {
+                        "$inc": {"extra_slots": slots},
+                        "$set": {"updated_at": datetime.now(timezone.utc)},
+                    },
+                    return_document=ReturnDocument.AFTER,
+                )
+            new_limit = get_vip_member_limit(base_limit, int((updated or {}).get("extra_slots", 0)))
+
+        if not updated:
+            refunded = await self._refund_capacity_purchase(
+                interaction,
+                price,
+                operation_id,
+                capacity_type,
+                "capacity_update_rejected",
+            )
+            if refunded:
+                return "O limite mudou durante a compra. Seu saldo foi devolvido."
+            return "Nao foi possivel aplicar a expansao nem confirmar o estorno. Acione a staff."
+
+        log_doc = {
+            "type": "shop_buy_capacity",
+            "operation_id": operation_id,
+            "capacity_type": capacity_type,
+            "user_id": self._uid(interaction.user.id),
+            "guild_id": str(interaction.guild.id),
+            "economy_guild_id": self._gid(interaction.guild.id),
+            "target": target_label,
+            "slots": slots,
+            "previous_limit": current_limit,
+            "new_limit": new_limit,
+            "price_currency": "essencia",
+            "price_amount": price,
+            "created_at": datetime.now(timezone.utc),
+        }
+        try:
+            await asyncio.to_thread(eco_logs_col.insert_one, log_doc)
+        except Exception:
+            log.exception(
+                "economy_capacity_purchase_log_failed operation_id=%s capacity_type=%s",
+                operation_id,
+                capacity_type,
+            )
+        log.info(
+            "economy_capacity_purchase_completed operation_id=%s capacity_type=%s guild_id=%s user_id=%s slots=%s previous_limit=%s new_limit=%s price=%s",
+            operation_id,
+            capacity_type,
+            interaction.guild.id,
+            interaction.user.id,
+            slots,
+            current_limit,
+            new_limit,
+            price,
+        )
+        benefit = "guilda" if capacity_type == "guild_slots" else "cargo VIP"
+        return (
+            f"Compra concluida: `+{slots}` vaga(s) para seu {benefit} por "
+            f"{format_currency_amount('essencia', price)}. Novo limite: `{new_limit}/{max_limit}`."
+        )
+
     async def _purchase_item_result(self, interaction: discord.Interaction, sku: str) -> str:
         if not await ensure_db_online(interaction, "comprar item da economia"):
             return "Banco indisponivel no momento."
@@ -2347,6 +2673,7 @@ class EconomySystem(commands.Cog):
                 eco_logs_col.insert_one,
                 {
                     "type": "shop_buy",
+                    "operation_id": str(interaction.id),
                     "user_id": self._uid(interaction.user.id),
                     "guild_id": self._gid(interaction.guild.id),
                     "sku": sku,
@@ -2360,6 +2687,15 @@ class EconomySystem(commands.Cog):
         except Exception:
             log.exception("VIP comprado, mas nao foi possivel registrar log de compra %s", sku)
         await self._record_vip_purchase_transaction(interaction, sku, entry, inventory_item, price)
+        log.info(
+            "economy_vip_purchase_completed operation_id=%s sku=%s guild_id=%s user_id=%s price=%s remaining_stock=%s",
+            interaction.id,
+            sku,
+            interaction.guild.id,
+            interaction.user.id,
+            price,
+            int(stock_ok.get("items", {}).get(sku, {}).get("stock", 0)),
+        )
         return (
             f"Compra concluida: **{format_vip_name_from_item(entry, sku)}** por {format_currency_amount('essencia', price)}. "
             "O VIP foi guardado; use `/eco inventario` para ativar ou doar."
@@ -2647,7 +2983,7 @@ class EconomySystem(commands.Cog):
             if scope == "estoque_loja":
                 await asyncio.to_thread(
                     eco_limits_col.update_many,
-                    {"guild_id": guild_id},
+                    {},
                     {"$set": {"purchased_skus": []}},
                 )
 

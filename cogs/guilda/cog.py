@@ -1,4 +1,5 @@
 import discord
+import asyncio
 from discord import app_commands
 from discord.ext import commands, tasks
 from discord import ui
@@ -10,7 +11,15 @@ import re
 from database import guilds_col
 
 
-from utils import DISCORD_EMBED_DESCRIPTION_LIMIT, ensure_guild_interaction, get_brt_keys, has_full_access, truncate_discord_text
+from utils import (
+    DISCORD_EMBED_DESCRIPTION_LIMIT,
+    GUILD_BASE_MEMBER_LIMIT,
+    ensure_guild_interaction,
+    get_brt_keys,
+    get_guild_member_limit,
+    has_full_access,
+    truncate_discord_text,
+)
 try:
     from config import CHAT_COUNT_CHANNEL_ID
 except ImportError:
@@ -81,28 +90,34 @@ class GuildInviteView(ui.View):
         if not current_guild:
             return await interaction.response.send_message("❌ Esta guilda não existe mais.", ephemeral=True)
 
-        active_members = await self.cog.get_active_member_records(interaction.guild, current_guild)
-        if len(active_members) >= 10:
-            return await interaction.response.send_message("❌ A guilda lotou nesses 3 minutos!", ephemeral=True)
+        async with self.cog.get_invite_accept_lock(current_guild["_id"]):
+            current_guild = guilds_col.find_one({"_id": current_guild["_id"]})
+            if not current_guild:
+                return await interaction.response.send_message("❌ Esta guilda não existe mais.", ephemeral=True)
 
-        if guilds_col.find_one({"members.user_id": interaction.user.id}):
-            return await interaction.response.send_message("❌ Você já está em uma guilda.", ephemeral=True)
+            active_members = await self.cog.get_active_member_records(interaction.guild, current_guild)
+            member_limit = get_guild_member_limit(current_guild)
+            if len(active_members) >= member_limit:
+                return await interaction.response.send_message("❌ A guilda lotou nesses 3 minutos!", ephemeral=True)
 
-        new_member = {
-            "user_id": interaction.user.id,
-            "joined_at": datetime.datetime.now(),
-            "xp": 0,
-            "msg_count": 0,
-            "voice_minutes": 0,
-            "voice_seconds": 0,
-            "message_xp": 0,
-            "voice_xp": 0,
-        }
+            if guilds_col.find_one({"members.user_id": interaction.user.id}):
+                return await interaction.response.send_message("❌ Você já está em uma guilda.", ephemeral=True)
 
-        guilds_col.update_one(
-            {"_id": self.guild_data["_id"]},
-            {"$push": {"members": new_member}}
-        )
+            new_member = {
+                "user_id": interaction.user.id,
+                "joined_at": datetime.datetime.now(),
+                "xp": 0,
+                "msg_count": 0,
+                "voice_minutes": 0,
+                "voice_seconds": 0,
+                "message_xp": 0,
+                "voice_xp": 0,
+            }
+
+            guilds_col.update_one(
+                {"_id": current_guild["_id"]},
+                {"$push": {"members": new_member}}
+            )
 
         self.value = True
         for child in self.children: child.disabled = True
@@ -255,6 +270,7 @@ class GuildSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._cd = commands.CooldownMapping.from_cooldown(1, MSG_COOLDOWN, commands.BucketType.user)
+        self._invite_accept_locks = {}
         if not GUILD_XP_FROM_ECONOMY_ONLY:
             self.voice_xp_loop.start()
 
@@ -265,6 +281,14 @@ class GuildSystem(commands.Cog):
 
     def get_user_guild(self, user_id):
         return guilds_col.find_one({"members.user_id": user_id})
+
+    def get_invite_accept_lock(self, guild_id) -> asyncio.Lock:
+        key = str(guild_id)
+        lock = self._invite_accept_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._invite_accept_locks[key] = lock
+        return lock
 
     async def get_guild_member_safe(self, guild: discord.Guild, user_id):
         try:
