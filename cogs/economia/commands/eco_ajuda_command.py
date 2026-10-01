@@ -153,7 +153,8 @@ async def _build_eco_help_embeds(self, guild: discord.Guild) -> dict[str, discor
     shop = discord.Embed(
         title=f"⏜⌢ ᐥ{SHOP_SECTION_EMOJI}  Loja Global de VIPs",
         description=(
-            "*Use `/eco loja_global` para comprar VIPs temporários em um estoque único para todos os servidores.*\n\n"
+            "*Use `/eco loja_global` para comprar VIPs temporários no estoque exclusivo do Animes Café.*\n"
+            "*As reposições acontecem conforme decisão da Administração.*\n\n"
             "**Tabela de valores:**\n"
             + "\n".join(shop_lines)
             + "\n\n"

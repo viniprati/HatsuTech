@@ -529,7 +529,8 @@ class GlobalVipStoreView(discord.ui.View):
         embed = discord.Embed(
             title="🌐 Loja Global de VIPs",
             description=(
-                "O estoque e unico e compartilhado entre todos os servidores autorizados. "
+                "Estoque unico e exclusivo da comunidade Animes Cafe. "
+                "As reposicoes acontecem conforme decisao da Administracao. "
                 "O VIP comprado fica no inventario para ativacao ou doacao."
             ),
             color=discord.Color.gold(),
@@ -2364,7 +2365,7 @@ class EconomySystem(commands.Cog):
         if not entry or not entry.get("enabled", True):
             return "Item nao disponivel no momento."
         if entry.get("stock", 0) <= 0:
-            return "Estoque esgotado para este item. Aguarde reposicao."
+            return "Estoque esgotado para este item. Aguarde uma reposicao definida pela Administracao."
 
         inventory_item = VIP_INVENTORY_ITEMS.get(sku)
         if not inventory_item:

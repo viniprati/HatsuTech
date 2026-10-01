@@ -17,7 +17,8 @@ Primeira versao de codigo formalmente identificada e publicada na branch
 
 ### Changed
 
-- reposicoes de VIP agora liberam os limites de compra globalmente;
+- reposicoes de VIP, definidas pela Administracao, liberam os limites de
+  compra para todos os usuarios da loja;
 - a loja antiga nao oferece mais compra de VIPs.
 
 [1.0.3]: https://github.com/viniprati/HatsuTech/compare/a8fa647...v1.0.3
