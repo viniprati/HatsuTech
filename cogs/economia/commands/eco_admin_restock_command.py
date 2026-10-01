@@ -12,7 +12,7 @@ async def execute(self, interaction: discord.Interaction, item: Choice[str], qua
         await asyncio.to_thread(eco_shop_col.update_one, {"_id": "main_shop"}, {"$set": sets}, upsert=True)
         await asyncio.to_thread(
             eco_limits_col.update_many,
-            {"guild_id": self._gid(interaction.guild.id)},
+            {},
             {"$set": {"purchased_skus": []}},
         )
         return await interaction.response.send_message(
@@ -33,7 +33,7 @@ async def execute(self, interaction: discord.Interaction, item: Choice[str], qua
     await asyncio.to_thread(eco_shop_col.update_one, {"_id": "main_shop"}, {"$set": {f"items.{item.value}.stock": new_stock}})
     await asyncio.to_thread(
         eco_limits_col.update_many,
-        {"guild_id": self._gid(interaction.guild.id)},
+        {},
         {"$pull": {"purchased_skus": item.value}},
     )
     await interaction.response.send_message(

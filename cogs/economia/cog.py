@@ -49,8 +49,8 @@ log = logging.getLogger(__name__)
 BERSERK_VIP_ID = 999723165225857074
 MUGETSU_VIP_ID = 1121511055059861524
 MONARCH_VIP_ID = 1351596017631494195
-VIP_STORE_MAX_STOCK = 1
-VIP_STORE_POLICY_VERSION = "vip_inventory_stock_1_v1"
+VIP_STORE_MAX_STOCK = 5
+VIP_STORE_POLICY_VERSION = "vip_global_store_stock_5_v1"
 VIP_TRANSACTION_BACKFILL_VERSION = "vip_transactions_from_shop_buy_v1"
 
 SHOP_ITEMS_DEFAULT = {
@@ -106,6 +106,8 @@ VIP_SKU_BY_NAME = {
     "VIP Monarch 30 dias": "vip_monarch_30d",
 }
 LOOTBOX_EMOJI = "<:controle:1512208193760268419>"
+STORE_AVAILABLE_EMOJI = "<:certo:1555211164114223115>"
+STORE_UNAVAILABLE_EMOJI = "<:errado:1555211162399019009>"
 
 LOOTBOX_STORE_ITEMS = {
     "loot_common": {
@@ -286,7 +288,6 @@ class EcoStoreCategorySelect(discord.ui.Select):
     def __init__(self):
         options = [
             discord.SelectOption(label="Lootboxes", value="lootboxes", description="Compre caixas com moedas", emoji=LOOTBOX_EMOJI),
-            discord.SelectOption(label="VIPs", value="vips", description="Compre VIPs temporários", emoji=VIP_EMOJIS["vip_berserk_30d"]),
             discord.SelectOption(label="Chances", value="chances", description="Veja odds das lootboxes", emoji=LOOTBOX_EMOJI),
             discord.SelectOption(label="Inventario", value="inventory", description="Veja moedas e caixas", emoji=LOOTBOX_EMOJI),
         ]
@@ -344,7 +345,6 @@ class EcoStoreView(discord.ui.View):
 
     def sync_controls(self):
         loot = self.current_category == "lootboxes"
-        vips = self.current_category == "vips"
         chances = self.current_category == "chances"
         inventory = self.current_category == "inventory"
 
@@ -356,10 +356,6 @@ class EcoStoreView(discord.ui.View):
             self.action_one.label = "Comprar Comum"
             self.action_two.label = "Comprar Premium"
             self.action_three.label = "Atualizar"
-        elif vips:
-            self.action_one.label = "Comprar Berserk"
-            self.action_two.label = "Comprar Mugetsu"
-            self.action_three.label = "Comprar Monarch"
         elif chances:
             self.action_one.label = "Odds Comum"
             self.action_two.label = "Odds Premium"
@@ -376,16 +372,6 @@ class EcoStoreView(discord.ui.View):
                 await interaction.edit_original_response(embed=embed, view=self)
             else:
                 await interaction.response.edit_message(embed=embed, view=self)
-        except discord.HTTPException:
-            pass
-
-    async def _run_vip_purchase(self, interaction: discord.Interaction, sku: str):
-        if not interaction.response.is_done():
-            await interaction.response.defer()
-        self.last_feedback = await self.cog._purchase_item_result(interaction, sku)
-        await self._refresh_message(interaction)
-        try:
-            await interaction.followup.send(self.last_feedback, ephemeral=True)
         except discord.HTTPException:
             pass
 
@@ -424,7 +410,6 @@ class EcoStoreView(discord.ui.View):
 
         title_map = {
             "lootboxes": "Loja - Lootboxes",
-            "vips": "Loja - VIPs",
             "chances": "Loja - Chances",
             "inventory": "Loja - Minhas Moedas e Inventario",
         }
@@ -440,31 +425,6 @@ class EcoStoreView(discord.ui.View):
                 f"**{format_lootbox_name(premium['name'])}**\n"
                 f"Preco: {format_currency_amount(premium['cost_currency'], premium['cost_amount'])}\n"
                 f"Inventario atual: `{premium_box}`"
-            )
-        elif self.current_category == "vips":
-            shop = await asyncio.to_thread(eco_shop_col.find_one, {"_id": "main_shop"}) or {"items": {}}
-            limits = await asyncio.to_thread(
-                eco_limits_col.find_one, {"_id": self.cog._limits_doc_id(self.author_id, self.guild_id)}
-            ) or {}
-            purchased = set(limits.get("purchased_skus", []))
-            lines = []
-            for sku in ("vip_berserk_30d", "vip_mugetsu_30d", "vip_monarch_30d"):
-                item = shop.get("items", {}).get(sku) or SHOP_ITEMS_DEFAULT.get(sku, {})
-                status = (
-                    "Comprado nesta rodada/reposicao"
-                    if sku in purchased
-                    else ("Disponivel" if item.get("enabled", True) and item.get("stock", 0) > 0 else "Indisponivel")
-                )
-                lines.append(
-                    f"**{format_vip_name_from_item(item, sku)}**\n"
-                    f"Preco: {format_currency_amount('essencia', int(item.get('price_essencia', 0)))}\n"
-                    f"Estoque: `{int(item.get('stock', 0))}`\n"
-                    f"Status: `{status}`"
-                )
-            embed.description = (
-                "VIPs comprados ficam guardados no inventario e nao sao ativados automaticamente. "
-                "Use `/eco inventario` para ativar ou doar.\n\n"
-                + "\n\n".join(lines)
             )
         elif self.current_category == "chances":
             common_lines = await asyncio.to_thread(self.cog._build_odds_lines, "loot_common", guild)
@@ -492,8 +452,6 @@ class EcoStoreView(discord.ui.View):
         if self.current_category == "lootboxes":
             modal = LootboxQuantityModal(self, "loot_common", interaction)
             return await interaction.response.send_modal(modal)
-        elif self.current_category == "vips":
-            return await self._run_vip_purchase(interaction, "vip_berserk_30d")
         elif self.current_category == "chances":
             self.last_feedback = "Odds da Lootbox Comum exibidas nesta pagina."
         await self._refresh_message(interaction)
@@ -503,8 +461,6 @@ class EcoStoreView(discord.ui.View):
         if self.current_category == "lootboxes":
             modal = LootboxQuantityModal(self, "loot_premium", interaction)
             return await interaction.response.send_modal(modal)
-        elif self.current_category == "vips":
-            return await self._run_vip_purchase(interaction, "vip_mugetsu_30d")
         elif self.current_category == "chances":
             self.last_feedback = "Odds da Lootbox Premium exibidas nesta pagina."
         await self._refresh_message(interaction)
@@ -513,11 +469,127 @@ class EcoStoreView(discord.ui.View):
     async def action_three(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_category == "lootboxes":
             self.last_feedback = "Loja atualizada."
-        elif self.current_category == "vips":
-            return await self._run_vip_purchase(interaction, "vip_monarch_30d")
         elif self.current_category == "chances":
             self.last_feedback = "Chances atualizadas."
         await self._refresh_message(interaction)
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+
+
+class GlobalVipStoreView(discord.ui.View):
+    def __init__(self, cog, author_id: int, guild_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.author_id = author_id
+        self.guild_id = guild_id
+        self.last_feedback: str | None = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "Somente quem abriu a Loja Global pode usar estes botoes.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    def _sync_stock_controls(self, shop: dict):
+        items = shop.get("items", {})
+        button_skus = (
+            (self.buy_berserk, "vip_berserk_30d"),
+            (self.buy_mugetsu, "vip_mugetsu_30d"),
+            (self.buy_monarch, "vip_monarch_30d"),
+        )
+        for button, sku in button_skus:
+            item = items.get(sku) or SHOP_ITEMS_DEFAULT[sku]
+            try:
+                stock = int(item.get("stock", 0))
+            except (TypeError, ValueError):
+                stock = 0
+            button.disabled = not item.get("enabled", True) or stock <= 0
+
+    async def build_embed(self) -> discord.Embed:
+        shop = await asyncio.to_thread(eco_shop_col.find_one, {"_id": "main_shop"})
+        if not shop and not is_db_online():
+            self.buy_berserk.disabled = True
+            self.buy_mugetsu.disabled = True
+            self.buy_monarch.disabled = True
+            return discord.Embed(
+                title="🌐 Loja Global de VIPs",
+                description=(
+                    f"{STORE_UNAVAILABLE_EMOJI} A loja esta temporariamente indisponivel porque "
+                    "nao foi possivel consultar o estoque global."
+                ),
+                color=discord.Color.red(),
+            )
+        shop = shop or {"items": copy.deepcopy(SHOP_ITEMS_DEFAULT)}
+        self._sync_stock_controls(shop)
+        embed = discord.Embed(
+            title="🌐 Loja Global de VIPs",
+            description=(
+                "O estoque e unico e compartilhado entre todos os servidores autorizados. "
+                "O VIP comprado fica no inventario para ativacao ou doacao."
+            ),
+            color=discord.Color.gold(),
+        )
+        for sku in ("vip_berserk_30d", "vip_mugetsu_30d", "vip_monarch_30d"):
+            item = shop.get("items", {}).get(sku) or SHOP_ITEMS_DEFAULT[sku]
+            try:
+                stock = max(0, int(item.get("stock", 0)))
+                max_stock = max(0, int(item.get("max_stock", VIP_STORE_MAX_STOCK)))
+            except (TypeError, ValueError):
+                stock = 0
+                max_stock = VIP_STORE_MAX_STOCK
+            available = bool(item.get("enabled", True) and stock > 0)
+            status_emoji = STORE_AVAILABLE_EMOJI if available else STORE_UNAVAILABLE_EMOJI
+            status_label = "Disponível" if available else "Indisponível"
+            embed.add_field(
+                name=f"{format_vip_name_from_item(item, sku)}",
+                value=(
+                    f"Preco: {format_currency_amount('essencia', int(item.get('price_essencia', 0)))}\n"
+                    f"Estoque global: `{stock}/{max_stock}`\n"
+                    f"Status: {status_emoji} {status_label}"
+                ),
+                inline=False,
+            )
+        user_doc = await asyncio.to_thread(self.cog._get_user_doc, self.author_id, self.guild_id)
+        embed.add_field(
+            name="Seu saldo",
+            value=format_currency_amount("essencia", int(user_doc.get("essencia", 0))),
+            inline=False,
+        )
+        if self.last_feedback:
+            embed.set_footer(text=truncate_discord_text(self.last_feedback, 2048))
+        return embed
+
+    async def _purchase(self, interaction: discord.Interaction, sku: str):
+        await interaction.response.defer(ephemeral=True)
+        self.last_feedback = await self.cog._purchase_item_result(interaction, sku)
+        embed = await self.build_embed()
+        await interaction.edit_original_response(embed=embed, view=self)
+        try:
+            await interaction.followup.send(self.last_feedback, ephemeral=True)
+        except discord.HTTPException:
+            pass
+
+    @discord.ui.button(label="Comprar Berserk", style=discord.ButtonStyle.primary)
+    async def buy_berserk(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._purchase(interaction, "vip_berserk_30d")
+
+    @discord.ui.button(label="Comprar Mugetsu", style=discord.ButtonStyle.primary)
+    async def buy_mugetsu(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._purchase(interaction, "vip_mugetsu_30d")
+
+    @discord.ui.button(label="Comprar Monarch", style=discord.ButtonStyle.success)
+    async def buy_monarch(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._purchase(interaction, "vip_monarch_30d")
+
+    @discord.ui.button(label="Atualizar", style=discord.ButtonStyle.secondary)
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.last_feedback = "Estoque global atualizado."
+        await interaction.response.edit_message(embed=await self.build_embed(), view=self)
 
     async def on_timeout(self):
         for child in self.children:
@@ -1753,6 +1825,7 @@ class EconomySystem(commands.Cog):
         created_at = datetime.now(timezone.utc)
         document = {
             "type": "vip_purchase",
+            "operation_id": str(interaction.id),
             "source": "kaguya_shop",
             "status": "completed",
             "guild_id": self._gid(interaction.guild.id),
@@ -2216,6 +2289,15 @@ class EconomySystem(commands.Cog):
         view = EcoStoreView(self, interaction.user.id, interaction.guild.id)
         await interaction.response.send_message(embed=await view.build_embed(interaction.guild), view=view, ephemeral=True)
 
+    @eco.command(name="loja_global", description="Mostra a loja global de VIPs.")
+    async def eco_loja_global(self, interaction: discord.Interaction):
+        if not await ensure_guild_interaction(interaction, "o comando /eco loja_global"):
+            return
+        if not await ensure_db_online(interaction, "abrir a Loja Global de VIPs"):
+            return
+        view = GlobalVipStoreView(self, interaction.user.id, interaction.guild.id)
+        await interaction.response.send_message(embed=await view.build_embed(), view=view, ephemeral=True)
+
     async def _buy_lootbox_for_inventory(self, interaction: discord.Interaction, box_id: str, quantity: int = 1) -> str:
         if not is_db_online():
             return "Banco de dados indisponivel no momento."
@@ -2347,6 +2429,7 @@ class EconomySystem(commands.Cog):
                 eco_logs_col.insert_one,
                 {
                     "type": "shop_buy",
+                    "operation_id": str(interaction.id),
                     "user_id": self._uid(interaction.user.id),
                     "guild_id": self._gid(interaction.guild.id),
                     "sku": sku,
@@ -2360,6 +2443,15 @@ class EconomySystem(commands.Cog):
         except Exception:
             log.exception("VIP comprado, mas nao foi possivel registrar log de compra %s", sku)
         await self._record_vip_purchase_transaction(interaction, sku, entry, inventory_item, price)
+        log.info(
+            "economy_vip_purchase_completed operation_id=%s sku=%s guild_id=%s user_id=%s price=%s remaining_stock=%s",
+            interaction.id,
+            sku,
+            interaction.guild.id,
+            interaction.user.id,
+            price,
+            int(stock_ok.get("items", {}).get(sku, {}).get("stock", 0)),
+        )
         return (
             f"Compra concluida: **{format_vip_name_from_item(entry, sku)}** por {format_currency_amount('essencia', price)}. "
             "O VIP foi guardado; use `/eco inventario` para ativar ou doar."
@@ -2647,7 +2739,7 @@ class EconomySystem(commands.Cog):
             if scope == "estoque_loja":
                 await asyncio.to_thread(
                     eco_limits_col.update_many,
-                    {"guild_id": guild_id},
+                    {},
                     {"$set": {"purchased_skus": []}},
                 )
 
