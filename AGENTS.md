@@ -68,7 +68,7 @@ Do not claim a command passed unless it was executed.
 Current baseline checks:
 
 ```bash
-python -m compileall -q main.py config.py database.py utils.py cogs scripts
+python -m compileall -q main.py config.py database.py utils.py version.py cogs scripts
 python -m pip check
 ```
 
@@ -166,4 +166,3 @@ satisfy style comments that are better handled by a formatter or linter.
 
 Limit automatic Codex/Copilot correction loops to two rounds without human
 input.
-

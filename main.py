@@ -9,6 +9,8 @@ from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from version import __version__
+
 
 load_dotenv(Path(__file__).resolve().with_name(".env"))
 load_dotenv(Path.home() / ".env", override=False)
@@ -289,7 +291,12 @@ class SecurityBot(commands.Bot):
 
     async def on_ready(self):
         logger.info("SecurityBot Online: %s (ID: %s)", self.user, self.user.id)
-        logger.info("bot_ready owner_id=%s allowed_guilds=%s", BOT_OWNER_ID, ALLOWED_GUILD_IDS)
+        logger.info(
+            "bot_ready version=%s owner_id=%s allowed_guilds=%s",
+            __version__,
+            BOT_OWNER_ID,
+            ALLOWED_GUILD_IDS,
+        )
         await self._leave_unauthorized_guilds()
         await self.change_presence(activity=discord.Game(name="Minecraft .gg/animescafe"))
 

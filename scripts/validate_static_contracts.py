@@ -6,8 +6,24 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON_TARGETS = [ROOT / "main.py", ROOT / "config.py", ROOT / "database.py", ROOT / "utils.py", ROOT / "cogs"]
-TEXT_TARGETS = [ROOT / "main.py", ROOT / "config.py", ROOT / "database.py", ROOT / "utils.py", ROOT / "cogs", ROOT / ".github"]
+PYTHON_TARGETS = [
+    ROOT / "main.py",
+    ROOT / "config.py",
+    ROOT / "database.py",
+    ROOT / "utils.py",
+    ROOT / "version.py",
+    ROOT / "cogs",
+]
+TEXT_TARGETS = [
+    ROOT / "main.py",
+    ROOT / "config.py",
+    ROOT / "database.py",
+    ROOT / "utils.py",
+    ROOT / "version.py",
+    ROOT / "CHANGELOG.md",
+    ROOT / "cogs",
+    ROOT / ".github",
+]
 
 EMBED_TITLE_LIMIT = 256
 EMBED_DESCRIPTION_LIMIT = 4096
