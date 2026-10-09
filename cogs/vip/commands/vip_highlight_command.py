@@ -34,6 +34,7 @@ async def execute_highlight(self, it, cor_primaria: str = None, cor_secundaria: 
                             "highlight_review_required": False,
                             "highlight_missing_role": False,
                             "last_seen_at": datetime.now(timezone.utc),
+                            "highlight_last_activity_at": datetime.now(timezone.utc),
                         },
                         "$unset": {
                             "highlight_cleanup_reason": "",
@@ -41,6 +42,8 @@ async def execute_highlight(self, it, cor_primaria: str = None, cor_secundaria: 
                             "highlight_cleanup_checked_at": "",
                             "highlight_disabled_reason": "",
                             "highlight_disabled_at": "",
+                            "highlight_delete_reason": "",
+                            "highlight_retry_after": "",
                         },
                     },
                     "command:/vip:highlight",
@@ -63,6 +66,7 @@ async def execute_highlight(self, it, cor_primaria: str = None, cor_secundaria: 
                     "highlight_review_required": False,
                     "highlight_missing_role": False,
                     "last_seen_at": datetime.now(timezone.utc),
+                    "highlight_last_activity_at": datetime.now(timezone.utc),
                 },
                 "$unset": {
                     "highlight_cleanup_reason": "",
@@ -70,6 +74,8 @@ async def execute_highlight(self, it, cor_primaria: str = None, cor_secundaria: 
                     "highlight_cleanup_checked_at": "",
                     "highlight_disabled_reason": "",
                     "highlight_disabled_at": "",
+                    "highlight_delete_reason": "",
+                    "highlight_retry_after": "",
                 },
             },
             "command:/vip:highlight:refresh",
@@ -77,6 +83,9 @@ async def execute_highlight(self, it, cor_primaria: str = None, cor_secundaria: 
             guild_id=it.guild.id,
             upsert=True
         )
+        current_doc = await self._get_vip_doc(it.guild, it.user.id)
+        if current_doc:
+            self._monarch_highlight_owners[(it.guild.id, it.user.id)] = current_doc["_id"]
 
         if role and role not in it.user.roles:
             try:

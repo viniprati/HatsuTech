@@ -9,10 +9,12 @@ arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 
 - exclusão do cargo VIP comum criado por `/vip` após 21 dias sem mensagens ou
   presença em voz fora do canal AFK pelo dono;
+- exclusão do destaque pessoal Monarch após 28 dias sem atividade do dono,
+  preservando o cargo base Monarch;
 - início seguro da contagem para cargos existentes e nova janela de 21 dias após
   interrupções longas do monitoramento;
 - tentativas posteriores e registro para revisão quando o Discord recusa a
-  exclusão.
+  exclusão, inclusive na desativação do destaque por perda de elegibilidade.
 
 ### Changed
 

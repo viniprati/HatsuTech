@@ -303,6 +303,7 @@ def _initialize_indexes():
                 ([("user_id", 1)], "vip_roles_user_id"),
                 ([("status", 1)], "vip_roles_status"),
                 ([("role_source", 1), ("role_id", 1)], "vip_roles_common_source_role"),
+                ([("highlight_id", 1)], "vip_roles_highlight_id"),
             ],
             "vip_role_presets": [
                 ([("guild_id", 1)], "vip_presets_guild_id"),

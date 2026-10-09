@@ -125,7 +125,7 @@ def vip_document_user_id(data: dict) -> str | None:
 def _without_snapshot_metadata(data: dict | None) -> dict | None:
     if data is None:
         return None
-    ignored = {"last_seen_at", "last_activity_at", "inactivity_observed_at", "cleanup_checked_at", "updated_at"}
+    ignored = {"last_seen_at", "last_activity_at", "inactivity_observed_at", "highlight_last_activity_at", "highlight_inactivity_observed_at", "cleanup_checked_at", "updated_at"}
     return {key: value for key, value in data.items() if key not in ignored}
 
 
@@ -233,6 +233,7 @@ RECONCILE_ABSENT_VIP_LIMIT_PER_RUN = 5
 RECONCILE_ABSENT_VIP_DELAY_SECONDS = 2.0
 MANUAL_VIP_MEMBER_REMOVAL_TTL_SECONDS = 30
 COMMON_VIP_INACTIVITY_DAYS = 21
+MONARCH_HIGHLIGHT_INACTIVITY_DAYS = 28
 COMMON_VIP_ACTIVITY_WRITE_INTERVAL_SECONDS = 300
 COMMON_VIP_DELETE_RETRY_SECONDS = 3600
 COMMON_VIP_SOURCES = {"command:/vip", "command:/vip:common"}
@@ -854,12 +855,16 @@ class VipSystem(commands.Cog):
         self._manual_vip_member_removals = {}
         self._common_vip_owners = {}
         self._common_vip_activity_written = {}
+        self._monarch_highlight_owners = {}
+        self._monarch_highlight_activity_written = {}
         if not self.check_temproles.is_running():
             self.check_temproles.start()
         if not self.reconcile_absent_vips.is_running():
             self.reconcile_absent_vips.start()
         if not self.check_inactive_common_vips.is_running():
             self.check_inactive_common_vips.start()
+        if not self.check_inactive_monarch_highlights.is_running():
+            self.check_inactive_monarch_highlights.start()
 
     def cog_unload(self):
         if self.check_temproles.is_running():
@@ -868,6 +873,8 @@ class VipSystem(commands.Cog):
             self.reconcile_absent_vips.cancel()
         if self.check_inactive_common_vips.is_running():
             self.check_inactive_common_vips.cancel()
+        if self.check_inactive_monarch_highlights.is_running():
+            self.check_inactive_monarch_highlights.cancel()
 
 
     def get_vip_limit(self, member):
@@ -1290,34 +1297,92 @@ class VipSystem(commands.Cog):
         reason: str,
         source: str,
     ) -> bool:
-        last_highlight_id = str(role.id) if role else None
-        if last_highlight_id is None:
-            data = await self._get_vip_doc(member.guild, member.id)
-            if data and data.get("highlight_id") is not None:
-                last_highlight_id = str(data.get("highlight_id"))
+        doc = await self._get_vip_doc(member.guild, member.id)
+        if not doc or not doc.get("highlight_id"):
+            return False
+        return await self._remove_monarch_highlight(member, doc, reason, source)
 
+    async def _record_highlight_delete_failure(self, member: discord.Member, reason: str, source: str, error: str):
+        retry_at = datetime.now(timezone.utc) + timedelta(seconds=COMMON_VIP_DELETE_RETRY_SECONDS)
+        await self._update_vip_role_with_snapshot(
+            member.id,
+            {"$set": {"highlight_review_required": True, "highlight_cleanup_reason": "highlight_delete_failed",
+                      "highlight_delete_reason": reason, "highlight_cleanup_source": source,
+                      "highlight_cleanup_checked_at": datetime.now(timezone.utc), "highlight_retry_after": retry_at}},
+            f"{source}:highlight_delete_failed", guild_id=member.guild.id,
+        )
+        log.warning("monarch_highlight_delete_failed guild_id=%s user_id=%s reason=%s error=%s",
+                    member.guild.id, member.id, reason, error)
+
+    async def _remove_monarch_highlight(self, member: discord.Member, doc: dict, reason: str, source: str) -> bool:
+        guild = member.guild
+        role_id = _to_int_or_none(doc.get("highlight_id"))
+        if not role_id or not is_db_online():
+            return False
+        role = guild.get_role(role_id)
+        if role is None:
+            try:
+                role = next((candidate for candidate in await guild.fetch_roles() if candidate.id == role_id), None)
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                await self._record_highlight_delete_failure(member, reason, source, type(exc).__name__)
+                return False
+        if role and (not self._is_personal_vip_role(role) or role.id == _to_int_or_none(doc.get("role_id"))
+                     or not bot_can_manage_role(guild, role)):
+            await self._record_highlight_delete_failure(member, reason, source, "unsafe_role_or_hierarchy")
+            return False
+        conflicting = await asyncio.to_thread(
+            vip_col.find_one,
+            {"_id": {"$ne": doc["_id"]}, "$or": [
+                {"highlight_id": {"$in": [str(role_id), role_id]}},
+                {"role_id": {"$in": [str(role_id), role_id]}},
+            ]},
+        )
+        if not is_db_online():
+            return False
+        if conflicting:
+            await self._record_highlight_delete_failure(member, reason, source, "shared_role")
+            return False
+        if doc.get("guild_id") is None:
+            scoped = await asyncio.to_thread(
+                vip_col.update_one,
+                {"_id": doc["_id"], "highlight_id": doc["highlight_id"], "guild_id": {"$exists": False}},
+                {"$set": {"guild_id": str(guild.id), "user_id": str(member.id)}},
+            )
+            if not is_db_online() or not scoped or not scoped.matched_count:
+                return False
+        if role:
+            try:
+                await role.delete(reason=f"Destaque Monarch desativado: {reason}")
+            except discord.NotFound:
+                role = None
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                await self._record_highlight_delete_failure(member, reason, source, type(exc).__name__)
+                return False
         now = datetime.now(timezone.utc)
         await self._update_vip_role_with_snapshot(
             member.id,
-            {
-                "$set": {
-                    "highlight_active": False,
-                    "highlight_disabled_reason": reason,
-                    "highlight_disabled_at": now,
-                    "last_highlight_id": last_highlight_id,
-                    "highlight_missing_role": role is None,
-                },
-                "$unset": {"highlight_id": ""},
-            },
-            f"{source}:deactivate_highlight",
-            guild_id=member.guild.id,
+            {"$set": {"highlight_active": False, "highlight_review_required": False,
+                      "highlight_disabled_reason": reason, "highlight_disabled_at": now,
+                      "last_highlight_id": str(role_id), "highlight_missing_role": role is None,
+                      "highlight_deleted_at": now},
+             "$unset": {"highlight_id": "", "highlight_cleanup_reason": "", "highlight_cleanup_source": "",
+                        "highlight_cleanup_checked_at": "", "highlight_delete_reason": "", "highlight_retry_after": ""}},
+            f"{source}:deactivate_highlight", guild_id=guild.id,
         )
-
-        if self._is_personal_vip_role(role):
-            try:
-                await role.delete(reason=f"Destaque Monarch desativado: {reason}")
-            except (discord.Forbidden, discord.HTTPException) as e:
-                log.warning("Nao foi possivel remover destaque Monarch user_id=%s role_id=%s: %s", member.id, role.id, e)
+        saved = await asyncio.to_thread(vip_col.find_one, {"_id": doc["_id"]})
+        if not saved or saved.get("highlight_id") is not None or saved.get("highlight_active") is not False:
+            log.error("monarch_highlight_state_not_saved guild_id=%s user_id=%s role_id=%s", guild.id, member.id, role_id)
+            return False
+        self._monarch_highlight_owners.pop((guild.id, member.id), None)
+        log.info("monarch_highlight_deleted guild_id=%s user_id=%s role_id=%s reason=%s", guild.id, member.id, role_id, reason)
+        try:
+            await self.enviar_log(
+                guild, "Destaque Monarch excluído",
+                [("Dono", member.mention), ("Cargo", f"{role.name if role else 'Cargo ausente'} (`{role_id}`)"),
+                 ("Motivo", reason)], discord.Color.orange(),
+            )
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException) as exc:
+            log.warning("monarch_highlight_audit_channel_failed guild_id=%s role_id=%s error=%s", guild.id, role_id, exc)
         return True
 
     async def _mark_highlight_needs_review(
@@ -1845,33 +1910,51 @@ class VipSystem(commands.Cog):
             return
         key = (message.guild.id, message.author.id)
         document_id = self._common_vip_owners.get(key)
-        if document_id is None:
+        highlight_document_id = self._monarch_highlight_owners.get(key)
+        if document_id is None and highlight_document_id is None:
             return
         async with self._get_vip_lock(message.author.id, message.guild.id):
             now = datetime.now(timezone.utc)
-            last_write = self._common_vip_activity_written.get(key)
-            if last_write and (now - last_write).total_seconds() < COMMON_VIP_ACTIVITY_WRITE_INTERVAL_SECONDS:
-                return
-            result = await asyncio.to_thread(
-                vip_col.update_one,
-                {"_id": document_id, "role_source": {"$in": list(COMMON_VIP_SOURCES)}, "role_id": {"$exists": True}},
-                {"$set": {"last_activity_at": now}},
-            )
-            if result and result.matched_count:
-                self._common_vip_activity_written[key] = now
+            if document_id is not None:
+                last_write = self._common_vip_activity_written.get(key)
+                if not last_write or (now - last_write).total_seconds() >= COMMON_VIP_ACTIVITY_WRITE_INTERVAL_SECONDS:
+                    result = await asyncio.to_thread(
+                        vip_col.update_one,
+                        {"_id": document_id, "role_source": {"$in": list(COMMON_VIP_SOURCES)}, "role_id": {"$exists": True}},
+                        {"$set": {"last_activity_at": now}},
+                    )
+                    if result and result.matched_count:
+                        self._common_vip_activity_written[key] = now
+            if highlight_document_id is not None:
+                last_write = self._monarch_highlight_activity_written.get(key)
+                if not last_write or (now - last_write).total_seconds() >= COMMON_VIP_ACTIVITY_WRITE_INTERVAL_SECONDS:
+                    result = await asyncio.to_thread(
+                        vip_col.update_one,
+                        {"_id": highlight_document_id, "highlight_id": {"$exists": True}},
+                        {"$set": {"highlight_last_activity_at": now}},
+                    )
+                    if result and result.matched_count:
+                        self._monarch_highlight_activity_written[key] = now
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         if member.bot or not after.channel or after.channel == member.guild.afk_channel or not is_db_online():
             return
-        document_id = self._common_vip_owners.get((member.guild.id, member.id))
-        if document_id is None:
+        key = (member.guild.id, member.id)
+        document_id = self._common_vip_owners.get(key)
+        highlight_document_id = self._monarch_highlight_owners.get(key)
+        if document_id is None and highlight_document_id is None:
             return
         async with self._get_vip_lock(member.id, member.guild.id):
-            doc = await asyncio.to_thread(vip_col.find_one, {"_id": document_id})
-            if not doc or doc.get("role_source") not in COMMON_VIP_SOURCES or not doc.get("role_id") or doc.get("status") == "inactive":
-                return
-            await self._record_common_vip_voice_activity(member.guild, member, doc, datetime.now(timezone.utc), after.channel)
+            now = datetime.now(timezone.utc)
+            if document_id is not None:
+                doc = await asyncio.to_thread(vip_col.find_one, {"_id": document_id})
+                if doc and doc.get("role_source") in COMMON_VIP_SOURCES and doc.get("role_id") and doc.get("status") != "inactive":
+                    await self._record_common_vip_voice_activity(member.guild, member, doc, now, after.channel)
+            if highlight_document_id is not None:
+                doc = await asyncio.to_thread(vip_col.find_one, {"_id": highlight_document_id})
+                if doc and doc.get("highlight_id"):
+                    await self._record_monarch_highlight_voice_activity(member.guild, member, doc, now, after.channel)
 
     async def _record_common_vip_voice_activity(self, guild: discord.Guild, member: discord.Member, doc: dict, now: datetime, channel=None):
         channel = channel or (member.voice.channel if member.voice else None)
@@ -1881,6 +1964,17 @@ class VipSystem(commands.Cog):
             vip_col.update_one,
             {"_id": doc["_id"], "role_source": {"$in": list(COMMON_VIP_SOURCES)}, "role_id": doc["role_id"]},
             {"$set": {"last_activity_at": now}},
+        )
+        return bool(result and result.matched_count)
+
+    async def _record_monarch_highlight_voice_activity(self, guild: discord.Guild, member: discord.Member, doc: dict, now: datetime, channel=None):
+        channel = channel or (member.voice.channel if member.voice else None)
+        if not channel or channel == guild.afk_channel:
+            return False
+        result = await asyncio.to_thread(
+            vip_col.update_one,
+            {"_id": doc["_id"], "highlight_id": doc["highlight_id"]},
+            {"$set": {"highlight_last_activity_at": now}},
         )
         return bool(result and result.matched_count)
 
@@ -2044,6 +2138,107 @@ class VipSystem(commands.Cog):
         self._common_vip_owners = owners
         self._common_vip_activity_written = {key: value for key, value in self._common_vip_activity_written.items() if key in owners}
 
+    async def _delete_inactive_monarch_highlight(self, guild: discord.Guild, user_id: int, document_id, cutoff: datetime):
+        async with self._get_vip_lock(user_id, guild.id):
+            if not is_db_online():
+                return
+            doc = await asyncio.to_thread(vip_col.find_one, {"_id": document_id})
+            if not doc or not doc.get("highlight_id") or not self._vip_doc_belongs_to_guild(guild, doc):
+                return
+            selected_doc = await self._get_vip_doc(guild, user_id)
+            if not is_db_online() or not selected_doc or selected_doc["_id"] != document_id:
+                return
+            activity_at = doc.get("highlight_last_activity_at")
+            if not isinstance(activity_at, datetime):
+                return
+            if activity_at.tzinfo is None:
+                activity_at = activity_at.replace(tzinfo=timezone.utc)
+            member = guild.get_member(user_id)
+            if member is None:
+                try:
+                    member = await guild.fetch_member(user_id)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    return
+            if member.bot:
+                return
+            if not self.is_monarch(member):
+                await self._remove_monarch_highlight(member, doc, "monarch_expired_or_missing", "highlight_reconciler")
+                return
+            if member.voice and member.voice.channel and member.voice.channel != guild.afk_channel:
+                await self._record_monarch_highlight_voice_activity(guild, member, doc, datetime.now(timezone.utc))
+                return
+            if activity_at > cutoff:
+                if doc.get("highlight_cleanup_reason") == "highlight_delete_failed":
+                    await self._update_vip_role_with_snapshot(
+                        user_id,
+                        {"$set": {"highlight_review_required": False},
+                         "$unset": {"highlight_cleanup_reason": "", "highlight_cleanup_source": "",
+                                    "highlight_cleanup_checked_at": "", "highlight_delete_reason": "", "highlight_retry_after": ""}},
+                        "highlight_inactivity:activity_resumed", guild_id=guild.id,
+                    )
+                return
+            await self._remove_monarch_highlight(member, doc, "owner_inactive_28_days", "highlight_inactivity")
+
+    @tasks.loop(minutes=10)
+    async def check_inactive_monarch_highlights(self):
+        try:
+            await self._check_inactive_monarch_highlights_once()
+        except Exception:
+            log.exception("check_inactive_monarch_highlights_iteration_failed")
+
+    async def _check_inactive_monarch_highlights_once(self):
+        if not is_db_online():
+            return
+        docs = await asyncio.to_thread(lambda: list(vip_col.find({"highlight_id": {"$exists": True}})))
+        if not is_db_online():
+            return
+        owners = {}
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=MONARCH_HIGHLIGHT_INACTIVITY_DAYS)
+        for doc in docs:
+            uid = _to_int_or_none(vip_document_user_id(doc))
+            if uid is None or not doc.get("highlight_id"):
+                continue
+            for guild in self.bot.guilds:
+                if not self._vip_doc_belongs_to_guild(guild, doc):
+                    continue
+                owners[(guild.id, uid)] = doc["_id"]
+                activity_at = doc.get("highlight_last_activity_at")
+                observed_at = doc.get("highlight_inactivity_observed_at")
+                if isinstance(observed_at, datetime) and observed_at.tzinfo is None:
+                    observed_at = observed_at.replace(tzinfo=timezone.utc)
+                if not isinstance(activity_at, datetime) or not isinstance(observed_at, datetime) or observed_at < now - timedelta(minutes=30):
+                    await asyncio.to_thread(
+                        vip_col.update_one,
+                        {"_id": doc["_id"], "highlight_id": doc["highlight_id"]},
+                        {"$set": {"highlight_last_activity_at": now, "highlight_inactivity_observed_at": now}},
+                    )
+                    continue
+                await asyncio.to_thread(
+                    vip_col.update_one,
+                    {"_id": doc["_id"], "highlight_id": doc["highlight_id"]},
+                    {"$set": {"highlight_inactivity_observed_at": now}},
+                )
+                if not is_db_online():
+                    return
+                if activity_at.tzinfo is None:
+                    activity_at = activity_at.replace(tzinfo=timezone.utc)
+                member = guild.get_member(uid)
+                if member and not member.bot and await self._record_monarch_highlight_voice_activity(guild, member, doc, now):
+                    continue
+                retry_after = doc.get("highlight_retry_after")
+                if isinstance(retry_after, datetime):
+                    if retry_after.tzinfo is None:
+                        retry_after = retry_after.replace(tzinfo=timezone.utc)
+                    if retry_after > now:
+                        continue
+                if activity_at <= cutoff or (member and not self.is_monarch(member)) or doc.get("highlight_cleanup_reason") == "highlight_delete_failed":
+                    await self._delete_inactive_monarch_highlight(guild, uid, doc["_id"], cutoff)
+        self._monarch_highlight_owners = owners
+        self._monarch_highlight_activity_written = {
+            key: value for key, value in self._monarch_highlight_activity_written.items() if key in owners
+        }
+
     @tasks.loop(minutes=10)
     async def reconcile_absent_vips(self):
         records = await asyncio.to_thread(lambda: list(vip_col.find({})))
@@ -2085,6 +2280,9 @@ class VipSystem(commands.Cog):
     @check_inactive_common_vips.before_loop
     async def before_inactivity_check(self): await self.bot.wait_until_ready()
 
+    @check_inactive_monarch_highlights.before_loop
+    async def before_monarch_highlight_check(self): await self.bot.wait_until_ready()
+
     @check_temproles.error
     async def check_temproles_error(self, error):
         log.exception("check_temproles_failed error=%s", error)
@@ -2096,6 +2294,10 @@ class VipSystem(commands.Cog):
     @check_inactive_common_vips.error
     async def check_inactive_common_vips_error(self, error):
         log.exception("check_inactive_common_vips_failed error=%s", error)
+
+    @check_inactive_monarch_highlights.error
+    async def check_inactive_monarch_highlights_error(self, error):
+        log.exception("check_inactive_monarch_highlights_failed error=%s", error)
 
 async def setup(bot):
     await bot.add_cog(VipSystem(bot))

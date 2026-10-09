@@ -52,6 +52,8 @@ class VipInactivityTests(unittest.IsolatedAsyncioTestCase):
         self.system._vip_locks = {}
         self.system._common_vip_owners = {(1, 2): self.doc["_id"]}
         self.system._common_vip_activity_written = {}
+        self.system._monarch_highlight_owners = {}
+        self.system._monarch_highlight_activity_written = {}
         self.system.bot = SimpleNamespace(guilds=[self.guild])
         self.system._get_vip_doc = AsyncMock(return_value=self.doc)
         self.system.enviar_log = AsyncMock()
@@ -132,6 +134,86 @@ class VipInactivityTests(unittest.IsolatedAsyncioTestCase):
         message = SimpleNamespace(guild=self.guild, author=self.member)
         await self.system.on_message(message)
         self.assertLess((datetime.now(timezone.utc) - self.doc["last_activity_at"]).total_seconds(), 5)
+
+    def configure_monarch_highlight(self):
+        self.highlight = SimpleNamespace(id=4, name="Destaque Monarch", managed=False, delete=AsyncMock())
+        self.doc["highlight_id"] = "4"
+        self.doc["highlight_active"] = True
+        self.doc["highlight_last_activity_at"] = self.now - timedelta(days=29)
+        self.member.roles = [SimpleNamespace(id=vip_module.MONARCH_VIP_ID)]
+        self.member.voice = None
+        self.guild.get_role = lambda rid: self.highlight if rid == 4 else self.role if rid == 3 else None
+        self.system._monarch_highlight_owners[(1, 2)] = self.doc["_id"]
+
+    async def test_monarch_highlight_deleted_after_28_days_without_touching_base_role(self):
+        self.configure_monarch_highlight()
+        await self.system._delete_inactive_monarch_highlight(self.guild, 2, self.doc["_id"], self.now - timedelta(days=28))
+        self.highlight.delete.assert_awaited_once()
+        self.role.delete.assert_not_awaited()
+        self.assertNotIn("highlight_id", self.doc)
+        self.assertEqual(self.doc["highlight_disabled_reason"], "owner_inactive_28_days")
+
+    async def test_recent_monarch_activity_preserves_highlight(self):
+        self.configure_monarch_highlight()
+        self.doc["highlight_last_activity_at"] = self.now - timedelta(days=1)
+        await self.system._delete_inactive_monarch_highlight(self.guild, 2, self.doc["_id"], self.now - timedelta(days=28))
+        self.highlight.delete.assert_not_awaited()
+        self.assertEqual(self.doc["highlight_id"], "4")
+
+    async def test_highlight_delete_failure_preserves_link_for_retry(self):
+        self.configure_monarch_highlight()
+        response = SimpleNamespace(status=403, reason="Forbidden", text="Forbidden")
+        self.highlight.delete.side_effect = discord.Forbidden(response, "Forbidden")
+        await self.system._delete_inactive_monarch_highlight(self.guild, 2, self.doc["_id"], self.now - timedelta(days=28))
+        self.assertEqual(self.doc["highlight_id"], "4")
+        self.assertTrue(self.doc["highlight_review_required"])
+        self.assertEqual(self.doc["highlight_cleanup_reason"], "highlight_delete_failed")
+
+    async def test_entitlement_deactivation_failure_preserves_highlight_link(self):
+        self.configure_monarch_highlight()
+        response = SimpleNamespace(status=403, reason="Forbidden", text="Forbidden")
+        self.highlight.delete.side_effect = discord.Forbidden(response, "Forbidden")
+        await self.system._deactivate_monarch_highlight_role(self.member, self.highlight, "monarch_expired_or_missing", "test")
+        self.assertEqual(self.doc["highlight_id"], "4")
+        self.assertEqual(self.doc["highlight_delete_reason"], "monarch_expired_or_missing")
+
+    async def test_existing_highlight_starts_new_28_day_window(self):
+        self.configure_monarch_highlight()
+        self.doc["highlight_last_activity_at"] = self.now - timedelta(days=40)
+        self.system._delete_inactive_monarch_highlight = AsyncMock()
+        await self.system._check_inactive_monarch_highlights_once()
+        self.system._delete_inactive_monarch_highlight.assert_not_awaited()
+        self.assertLess((datetime.now(timezone.utc) - self.doc["highlight_last_activity_at"]).total_seconds(), 5)
+
+    async def test_highlight_only_owner_activity_is_recorded(self):
+        self.configure_monarch_highlight()
+        self.system._common_vip_owners.clear()
+        await self.system.on_message(SimpleNamespace(guild=self.guild, author=self.member))
+        self.assertLess((datetime.now(timezone.utc) - self.doc["highlight_last_activity_at"]).total_seconds(), 5)
+
+    async def test_short_monarch_voice_session_is_recorded(self):
+        self.configure_monarch_highlight()
+        self.system._common_vip_owners.clear()
+        await self.system.on_voice_state_update(
+            self.member, SimpleNamespace(channel=None), SimpleNamespace(channel=object())
+        )
+        self.assertLess((datetime.now(timezone.utc) - self.doc["highlight_last_activity_at"]).total_seconds(), 5)
+
+    async def test_highlight_failed_deletion_is_retried_after_backoff(self):
+        self.configure_monarch_highlight()
+        self.doc["highlight_inactivity_observed_at"] = self.now
+        self.doc["highlight_cleanup_reason"] = "highlight_delete_failed"
+        self.doc["highlight_retry_after"] = self.now - timedelta(minutes=1)
+        self.system._delete_inactive_monarch_highlight = AsyncMock()
+        await self.system._check_inactive_monarch_highlights_once()
+        self.system._delete_inactive_monarch_highlight.assert_awaited_once()
+
+    async def test_entitlement_deactivation_removes_highlight_after_success(self):
+        self.configure_monarch_highlight()
+        await self.system._deactivate_monarch_highlight_role(self.member, self.highlight, "monarch_expired_or_missing", "test")
+        self.highlight.delete.assert_awaited_once()
+        self.assertNotIn("highlight_id", self.doc)
+        self.assertFalse(self.doc["highlight_active"])
 
 
 if __name__ == "__main__":
