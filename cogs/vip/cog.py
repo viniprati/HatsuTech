@@ -428,7 +428,19 @@ class VipMainView(ui.View):
     async def delete(self, it, b):
         if not await self._ensure_owner_binding(it):
             return
+        if not await ensure_db_online(it, "a exclusão do VIP"):
+            return
         async with self.cog._get_vip_lock(it.user.id, it.guild.id):
+            try:
+                await self.role.delete(reason="VIP pessoal excluído pelo dono")
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                log.warning("vip_owner_delete_failed guild_id=%s user_id=%s role_id=%s error=%s",
+                            it.guild.id, it.user.id, self.role.id, exc)
+                return await it.response.send_message(
+                    "Não consegui excluir o cargo VIP. Verifique minhas permissões e a hierarquia.", ephemeral=True,
+                )
             await self.cog._update_vip_role_with_snapshot(
                 it.user.id,
                 {
@@ -445,10 +457,13 @@ class VipMainView(ui.View):
                 actor_id=it.user.id,
                 guild_id=it.guild.id,
             )
-            try:
-                await self.role.delete()
-            except (discord.Forbidden, discord.HTTPException):
-                pass
+            updated = await self.cog._get_vip_doc(it.guild, it.user.id)
+            if not updated or updated.get("status") != "inactive":
+                log.error("vip_owner_delete_db_failed guild_id=%s user_id=%s role_id=%s",
+                          it.guild.id, it.user.id, self.role.id)
+                return await it.response.send_message(
+                    "O cargo foi excluído, mas não consegui atualizar o registro. Avise a administração.", ephemeral=True,
+                )
         await it.response.send_message("VIP deletado.", ephemeral=True); self.stop()
 
 
@@ -496,7 +511,19 @@ class VipHighlightView(ui.View):
     async def delete_highlight(self, it, b):
         if not await self._ensure_owner_binding(it):
             return
+        if not await ensure_db_online(it, "a exclusão do destaque"):
+            return
         async with self.cog._get_vip_lock(it.user.id, it.guild.id):
+            try:
+                await self.role.delete(reason="Destaque VIP excluído pelo dono")
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                log.warning("vip_highlight_delete_failed guild_id=%s user_id=%s role_id=%s error=%s",
+                            it.guild.id, it.user.id, self.role.id, exc)
+                return await it.response.send_message(
+                    "Não consegui excluir o destaque. Verifique minhas permissões e a hierarquia.", ephemeral=True,
+                )
             await self.cog._update_vip_role_with_snapshot(
                 it.user.id,
                 {
@@ -513,10 +540,13 @@ class VipHighlightView(ui.View):
                 actor_id=it.user.id,
                 guild_id=it.guild.id,
             )
-            try:
-                await self.role.delete()
-            except (discord.Forbidden, discord.HTTPException):
-                pass
+            updated = await self.cog._get_vip_doc(it.guild, it.user.id)
+            if not updated or updated.get("highlight_active") is not False:
+                log.error("vip_highlight_delete_db_failed guild_id=%s user_id=%s role_id=%s",
+                          it.guild.id, it.user.id, self.role.id)
+                return await it.response.send_message(
+                    "O destaque foi excluído, mas não consegui atualizar o registro. Avise a administração.", ephemeral=True,
+                )
         await it.response.send_message("Destaque removido.", ephemeral=True); self.stop()
 
 
