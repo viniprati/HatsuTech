@@ -47,6 +47,7 @@ class VipInactivityTests(unittest.IsolatedAsyncioTestCase):
             get_member=lambda uid: self.member if uid == 2 else None,
             get_role=lambda rid: self.role if rid == 3 else None,
         )
+        self.member.guild = self.guild
         self.system = vip_module.VipSystem.__new__(vip_module.VipSystem)
         self.system._vip_locks = {}
         self.system._common_vip_owners = {(1, 2): self.doc["_id"]}
@@ -121,6 +122,16 @@ class VipInactivityTests(unittest.IsolatedAsyncioTestCase):
         await self.system._delete_inactive_common_vip(self.guild, 2, self.doc["_id"], self.now - timedelta(days=21))
         self.role.delete.assert_awaited_once()
         self.assertEqual(self.doc["guild_id"], "1")
+
+    async def test_short_voice_session_is_recorded_on_join(self):
+        after = SimpleNamespace(channel=object())
+        await self.system.on_voice_state_update(self.member, SimpleNamespace(channel=None), after)
+        self.assertLess((datetime.now(timezone.utc) - self.doc["last_activity_at"]).total_seconds(), 5)
+
+    async def test_message_activity_is_recorded(self):
+        message = SimpleNamespace(guild=self.guild, author=self.member)
+        await self.system.on_message(message)
+        self.assertLess((datetime.now(timezone.utc) - self.doc["last_activity_at"]).total_seconds(), 5)
 
 
 if __name__ == "__main__":

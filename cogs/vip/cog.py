@@ -852,7 +852,7 @@ class VipSystem(commands.Cog):
         self.bot = bot
         self._vip_locks = {}
         self._manual_vip_member_removals = {}
-        self._common_vip_owners = set()
+        self._common_vip_owners = {}
         self._common_vip_activity_written = {}
         if not self.check_temproles.is_running():
             self.check_temproles.start()
@@ -1847,21 +1847,35 @@ class VipSystem(commands.Cog):
         document_id = self._common_vip_owners.get(key)
         if document_id is None:
             return
-        now = datetime.now(timezone.utc)
-        last_write = self._common_vip_activity_written.get(key)
-        if last_write and (now - last_write).total_seconds() < COMMON_VIP_ACTIVITY_WRITE_INTERVAL_SECONDS:
-            return
-        result = await asyncio.to_thread(
-            vip_col.update_one,
-            {"_id": document_id, "role_source": {"$in": list(COMMON_VIP_SOURCES)}, "role_id": {"$exists": True}},
-            {"$set": {"last_activity_at": now}},
-        )
-        if result and result.matched_count:
-            self._common_vip_activity_written[key] = now
+        async with self._get_vip_lock(message.author.id, message.guild.id):
+            now = datetime.now(timezone.utc)
+            last_write = self._common_vip_activity_written.get(key)
+            if last_write and (now - last_write).total_seconds() < COMMON_VIP_ACTIVITY_WRITE_INTERVAL_SECONDS:
+                return
+            result = await asyncio.to_thread(
+                vip_col.update_one,
+                {"_id": document_id, "role_source": {"$in": list(COMMON_VIP_SOURCES)}, "role_id": {"$exists": True}},
+                {"$set": {"last_activity_at": now}},
+            )
+            if result and result.matched_count:
+                self._common_vip_activity_written[key] = now
 
-    async def _record_common_vip_voice_activity(self, guild: discord.Guild, member: discord.Member, doc: dict, now: datetime):
-        voice = member.voice
-        if not voice or not voice.channel or voice.channel == guild.afk_channel:
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        if member.bot or not after.channel or after.channel == member.guild.afk_channel or not is_db_online():
+            return
+        document_id = self._common_vip_owners.get((member.guild.id, member.id))
+        if document_id is None:
+            return
+        async with self._get_vip_lock(member.id, member.guild.id):
+            doc = await asyncio.to_thread(vip_col.find_one, {"_id": document_id})
+            if not doc or doc.get("role_source") not in COMMON_VIP_SOURCES or not doc.get("role_id") or doc.get("status") == "inactive":
+                return
+            await self._record_common_vip_voice_activity(member.guild, member, doc, datetime.now(timezone.utc), after.channel)
+
+    async def _record_common_vip_voice_activity(self, guild: discord.Guild, member: discord.Member, doc: dict, now: datetime, channel=None):
+        channel = channel or (member.voice.channel if member.voice else None)
+        if not channel or channel == guild.afk_channel:
             return False
         result = await asyncio.to_thread(
             vip_col.update_one,
