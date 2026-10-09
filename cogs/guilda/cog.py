@@ -5,6 +5,7 @@ from discord import ui
 import datetime
 import logging
 import re
+import asyncio
 
 
 from database import guilds_col
@@ -132,8 +133,15 @@ class GuildConfirmDelete(ui.View):
 
     @ui.button(label="Sim, Deletar Guilda", style=discord.ButtonStyle.danger, emoji="💣")
     async def confirm(self, interaction: discord.Interaction, button: ui.Button):
-        guilds_col.delete_one({"_id": self.guild_id})
-        await interaction.response.edit_message(content="🗑️ **Guilda deletada com sucesso!**", view=None, embed=None)
+        if not has_full_access(interaction.user) and not interaction.permissions.administrator:
+            return await interaction.response.send_message("Você não tem mais permissão para excluir guildas.", ephemeral=True)
+        await interaction.response.defer()
+        result = await asyncio.to_thread(guilds_col.delete_one, {"_id": self.guild_id})
+        if not getattr(result, "acknowledged", False):
+            return await interaction.followup.send("Não consegui confirmar a exclusão no banco. Tente novamente.", ephemeral=True)
+        if not result.deleted_count:
+            return await interaction.edit_original_response(content="A guilda já não está cadastrada.", view=None, embed=None)
+        await interaction.edit_original_response(content="🗑️ Guilda excluída do banco de dados.", view=None, embed=None)
 
     @ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="✖️")
     async def cancel(self, interaction: discord.Interaction, button: ui.Button):
