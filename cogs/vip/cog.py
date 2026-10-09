@@ -6,6 +6,7 @@ import time
 import re
 import asyncio
 import logging
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
 
@@ -857,6 +858,8 @@ class VipSystem(commands.Cog):
         self._common_vip_activity_written = {}
         self._monarch_highlight_owners = {}
         self._monarch_highlight_activity_written = {}
+        self._common_vip_cache_loaded = False
+        self._monarch_highlight_cache_loaded = False
         if not self.check_temproles.is_running():
             self.check_temproles.start()
         if not self.reconcile_absent_vips.is_running():
@@ -1908,6 +1911,7 @@ class VipSystem(commands.Cog):
     async def on_message(self, message: discord.Message):
         if not message.guild or message.author.bot or not is_db_online():
             return
+        await self._hydrate_inactivity_owner_cache(message.guild, message.author.id)
         key = (message.guild.id, message.author.id)
         document_id = self._common_vip_owners.get(key)
         highlight_document_id = self._monarch_highlight_owners.get(key)
@@ -1940,6 +1944,7 @@ class VipSystem(commands.Cog):
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         if member.bot or not after.channel or after.channel == member.guild.afk_channel or not is_db_online():
             return
+        await self._hydrate_inactivity_owner_cache(member.guild, member.id)
         key = (member.guild.id, member.id)
         document_id = self._common_vip_owners.get(key)
         highlight_document_id = self._monarch_highlight_owners.get(key)
@@ -1955,6 +1960,19 @@ class VipSystem(commands.Cog):
                 doc = await asyncio.to_thread(vip_col.find_one, {"_id": highlight_document_id})
                 if doc and doc.get("highlight_id"):
                     await self._record_monarch_highlight_voice_activity(member.guild, member, doc, now, after.channel)
+
+    async def _hydrate_inactivity_owner_cache(self, guild: discord.Guild, user_id: int):
+        key = (guild.id, user_id)
+        if ((key in self._common_vip_owners or self._common_vip_cache_loaded)
+                and (key in self._monarch_highlight_owners or self._monarch_highlight_cache_loaded)):
+            return
+        doc = await self._get_vip_doc(guild, user_id)
+        if not doc or not is_db_online():
+            return
+        if not self._common_vip_cache_loaded and doc.get("role_source") in COMMON_VIP_SOURCES and doc.get("role_id") and doc.get("status") != "inactive":
+            self._common_vip_owners[key] = doc["_id"]
+        if not self._monarch_highlight_cache_loaded and doc.get("highlight_id"):
+            self._monarch_highlight_owners[key] = doc["_id"]
 
     async def _record_common_vip_voice_activity(self, guild: discord.Guild, member: discord.Member, doc: dict, now: datetime, channel=None):
         channel = channel or (member.voice.channel if member.voice else None)
@@ -1990,7 +2008,7 @@ class VipSystem(commands.Cog):
                 return
             if not selected_doc or selected_doc["_id"] != document_id:
                 return
-            if doc.get("status") == "inactive" or (doc.get("status") == "needs_review" and doc.get("cleanup_reason") != "inactivity_delete_failed"):
+            if doc.get("status") == "inactive" or (doc.get("status") == "needs_review" and doc.get("cleanup_reason") not in {"inactivity_delete_failed", "member_not_found"}):
                 return
             role_id = _to_int_or_none(doc.get("role_id"))
             activity_at = doc.get("last_activity_at")
@@ -2011,9 +2029,11 @@ class VipSystem(commands.Cog):
             if member is None:
                 try:
                     member = await guild.fetch_member(user_id)
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                except discord.NotFound:
+                    member = None
+                except (discord.Forbidden, discord.HTTPException):
                     return
-            if member.bot or (member.voice and member.voice.channel and member.voice.channel != guild.afk_channel):
+            if member and (member.bot or (member.voice and member.voice.channel and member.voice.channel != guild.afk_channel)):
                 if not member.bot:
                     await self._record_common_vip_voice_activity(guild, member, doc, datetime.now(timezone.utc))
                 return
@@ -2072,7 +2092,7 @@ class VipSystem(commands.Cog):
             try:
                 await self.enviar_log(
                     guild, "VIP comum excluído por inatividade",
-                    [("Dono", member.mention), ("Cargo excluído", f"{role.name if role else 'Cargo ausente'} (`{role_id}`)"),
+                    [("Dono", member.mention if member else f"<@{user_id}>"), ("Cargo excluído", f"{role.name if role else 'Cargo ausente'} (`{role_id}`)"),
                      ("Última atividade registrada", f"<t:{int(activity_at.timestamp())}:F>")],
                     discord.Color.orange(),
                 )
@@ -2136,6 +2156,7 @@ class VipSystem(commands.Cog):
                 if activity_at <= cutoff:
                     await self._delete_inactive_common_vip(guild, uid, doc["_id"], cutoff)
         self._common_vip_owners = owners
+        self._common_vip_cache_loaded = True
         self._common_vip_activity_written = {key: value for key, value in self._common_vip_activity_written.items() if key in owners}
 
     async def _delete_inactive_monarch_highlight(self, guild: discord.Guild, user_id: int, document_id, cutoff: datetime):
@@ -2157,7 +2178,12 @@ class VipSystem(commands.Cog):
             if member is None:
                 try:
                     member = await guild.fetch_member(user_id)
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                except discord.NotFound:
+                    if activity_at <= cutoff:
+                        absent_owner = SimpleNamespace(id=user_id, guild=guild, mention=f"<@{user_id}>")
+                        await self._remove_monarch_highlight(absent_owner, doc, "owner_absent_28_days", "highlight_inactivity")
+                    return
+                except (discord.Forbidden, discord.HTTPException):
                     return
             if member.bot:
                 return
@@ -2224,7 +2250,7 @@ class VipSystem(commands.Cog):
                 if activity_at.tzinfo is None:
                     activity_at = activity_at.replace(tzinfo=timezone.utc)
                 member = guild.get_member(uid)
-                if member and not member.bot and await self._record_monarch_highlight_voice_activity(guild, member, doc, now):
+                if member and not member.bot and self.is_monarch(member) and await self._record_monarch_highlight_voice_activity(guild, member, doc, now):
                     continue
                 retry_after = doc.get("highlight_retry_after")
                 if isinstance(retry_after, datetime):
@@ -2235,6 +2261,7 @@ class VipSystem(commands.Cog):
                 if activity_at <= cutoff or (member and not self.is_monarch(member)) or doc.get("highlight_cleanup_reason") == "highlight_delete_failed":
                     await self._delete_inactive_monarch_highlight(guild, uid, doc["_id"], cutoff)
         self._monarch_highlight_owners = owners
+        self._monarch_highlight_cache_loaded = True
         self._monarch_highlight_activity_written = {
             key: value for key, value in self._monarch_highlight_activity_written.items() if key in owners
         }

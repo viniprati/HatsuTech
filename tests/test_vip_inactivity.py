@@ -54,6 +54,8 @@ class VipInactivityTests(unittest.IsolatedAsyncioTestCase):
         self.system._common_vip_activity_written = {}
         self.system._monarch_highlight_owners = {}
         self.system._monarch_highlight_activity_written = {}
+        self.system._common_vip_cache_loaded = True
+        self.system._monarch_highlight_cache_loaded = True
         self.system.bot = SimpleNamespace(guilds=[self.guild])
         self.system._get_vip_doc = AsyncMock(return_value=self.doc)
         self.system.enviar_log = AsyncMock()
@@ -214,6 +216,42 @@ class VipInactivityTests(unittest.IsolatedAsyncioTestCase):
         self.highlight.delete.assert_awaited_once()
         self.assertNotIn("highlight_id", self.doc)
         self.assertFalse(self.doc["highlight_active"])
+
+    async def test_former_monarch_in_voice_still_enters_cleanup(self):
+        self.configure_monarch_highlight()
+        self.member.roles = []
+        self.member.voice = SimpleNamespace(channel=object())
+        self.doc["highlight_inactivity_observed_at"] = self.now
+        self.system._delete_inactive_monarch_highlight = AsyncMock()
+        await self.system._check_inactive_monarch_highlights_once()
+        self.system._delete_inactive_monarch_highlight.assert_awaited_once()
+
+    async def test_absent_common_owner_does_not_leave_role_behind(self):
+        self.doc["status"] = "needs_review"
+        self.doc["cleanup_reason"] = "member_not_found"
+        self.guild.get_member = lambda _uid: None
+        response = SimpleNamespace(status=404, reason="Not Found", text="Not Found")
+        self.guild.fetch_member = AsyncMock(side_effect=discord.NotFound(response, "Not Found"))
+        await self.system._delete_inactive_common_vip(self.guild, 2, self.doc["_id"], self.now - timedelta(days=21))
+        self.role.delete.assert_awaited_once()
+        self.assertNotIn("role_id", self.doc)
+
+    async def test_absent_monarch_owner_does_not_leave_highlight_behind(self):
+        self.configure_monarch_highlight()
+        self.guild.get_member = lambda _uid: None
+        response = SimpleNamespace(status=404, reason="Not Found", text="Not Found")
+        self.guild.fetch_member = AsyncMock(side_effect=discord.NotFound(response, "Not Found"))
+        await self.system._delete_inactive_monarch_highlight(self.guild, 2, self.doc["_id"], self.now - timedelta(days=28))
+        self.highlight.delete.assert_awaited_once()
+        self.assertNotIn("highlight_id", self.doc)
+
+    async def test_startup_message_warms_highlight_cache(self):
+        self.configure_monarch_highlight()
+        self.system._monarch_highlight_owners.clear()
+        self.system._monarch_highlight_cache_loaded = False
+        await self.system.on_message(SimpleNamespace(guild=self.guild, author=self.member))
+        self.assertEqual(self.system._monarch_highlight_owners[(1, 2)], self.doc["_id"])
+        self.assertLess((datetime.now(timezone.utc) - self.doc["highlight_last_activity_at"]).total_seconds(), 5)
 
 
 if __name__ == "__main__":

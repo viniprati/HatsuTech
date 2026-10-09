@@ -15,6 +15,8 @@ arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
   interrupções longas do monitoramento;
 - tentativas posteriores e registro para revisão quando o Discord recusa a
   exclusão, inclusive na desativação do destaque por perda de elegibilidade.
+- limpeza após o prazo mesmo quando o dono saiu do servidor, depois de confirmar
+  sua ausência pela API do Discord.
 
 ### Changed
 
