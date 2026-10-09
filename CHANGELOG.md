@@ -3,6 +3,25 @@
 Todas as mudancas relevantes do HatsuTech passam a ser registradas neste
 arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-10-08
+
+### Added
+
+- exclusão do cargo VIP comum criado por `/vip` após 21 dias sem mensagens ou
+  presença em voz fora do canal AFK pelo dono;
+- início seguro da contagem para cargos existentes e nova janela de 21 dias após
+  interrupções longas do monitoramento;
+- tentativas posteriores e registro para revisão quando o Discord recusa a
+  exclusão.
+
+### Changed
+
+- correções da remoção de cargos temporários e da exclusão manual de VIP;
+- comandos de cargos temporários agrupados em `/cargo_temporario`;
+- consultas administrativas de VIP, guildas, compras e estatísticas com painéis
+  mais claros;
+- confirmações administrativas para exclusão de guilda e alterações sensíveis.
+
 ## [1.0.4] - 2026-10-01
 
 ### Added
@@ -41,3 +60,4 @@ Primeira versao de codigo formalmente identificada e publicada na branch
 
 [1.0.3]: https://github.com/viniprati/HatsuTech/compare/a8fa647...v1.0.3
 [1.0.4]: https://github.com/viniprati/HatsuTech/compare/v1.0.3...v1.0.4
+[1.1.0]: https://github.com/viniprati/HatsuTech/compare/v1.0.4...v1.1.0

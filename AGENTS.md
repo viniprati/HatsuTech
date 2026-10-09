@@ -68,7 +68,8 @@ Do not claim a command passed unless it was executed.
 Current baseline checks:
 
 ```bash
-python -m compileall -q main.py config.py database.py utils.py version.py cogs scripts
+python -m compileall -q main.py config.py database.py utils.py version.py cogs scripts tests
+python -m unittest discover -s tests -v
 python -m pip check
 ```
 

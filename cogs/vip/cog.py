@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 
 from admin_audit import send_admin_audit_dm
-from database import vip_col, vip_recovery_logs_col, vip_role_presets_col, temp_col
+from database import is_db_online, vip_col, vip_recovery_logs_col, vip_role_presets_col, temp_col
 
 
 from utils import (
@@ -125,7 +125,7 @@ def vip_document_user_id(data: dict) -> str | None:
 def _without_snapshot_metadata(data: dict | None) -> dict | None:
     if data is None:
         return None
-    ignored = {"last_seen_at", "cleanup_checked_at", "updated_at"}
+    ignored = {"last_seen_at", "last_activity_at", "inactivity_observed_at", "cleanup_checked_at", "updated_at"}
     return {key: value for key, value in data.items() if key not in ignored}
 
 
@@ -232,6 +232,10 @@ RESTORE_MEMBER_DELAY_SECONDS = 0.25
 RECONCILE_ABSENT_VIP_LIMIT_PER_RUN = 5
 RECONCILE_ABSENT_VIP_DELAY_SECONDS = 2.0
 MANUAL_VIP_MEMBER_REMOVAL_TTL_SECONDS = 30
+COMMON_VIP_INACTIVITY_DAYS = 21
+COMMON_VIP_ACTIVITY_WRITE_INTERVAL_SECONDS = 300
+COMMON_VIP_DELETE_RETRY_SECONDS = 3600
+COMMON_VIP_SOURCES = {"command:/vip", "command:/vip:common"}
 
 
 
@@ -848,16 +852,22 @@ class VipSystem(commands.Cog):
         self.bot = bot
         self._vip_locks = {}
         self._manual_vip_member_removals = {}
+        self._common_vip_owners = set()
+        self._common_vip_activity_written = {}
         if not self.check_temproles.is_running():
             self.check_temproles.start()
         if not self.reconcile_absent_vips.is_running():
             self.reconcile_absent_vips.start()
+        if not self.check_inactive_common_vips.is_running():
+            self.check_inactive_common_vips.start()
 
     def cog_unload(self):
         if self.check_temproles.is_running():
             self.check_temproles.cancel()
         if self.reconcile_absent_vips.is_running():
             self.reconcile_absent_vips.cancel()
+        if self.check_inactive_common_vips.is_running():
+            self.check_inactive_common_vips.cancel()
 
 
     def get_vip_limit(self, member):
@@ -1829,6 +1839,189 @@ class VipSystem(commands.Cog):
             except (TypeError, ValueError, KeyError) as e:
                 log.warning("temprole_expiry_invalid_record record_id=%s error=%s", i.get("_id"), e)
 
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if not message.guild or message.author.bot or not is_db_online():
+            return
+        key = (message.guild.id, message.author.id)
+        document_id = self._common_vip_owners.get(key)
+        if document_id is None:
+            return
+        now = datetime.now(timezone.utc)
+        last_write = self._common_vip_activity_written.get(key)
+        if last_write and (now - last_write).total_seconds() < COMMON_VIP_ACTIVITY_WRITE_INTERVAL_SECONDS:
+            return
+        result = await asyncio.to_thread(
+            vip_col.update_one,
+            {"_id": document_id, "role_source": {"$in": list(COMMON_VIP_SOURCES)}, "role_id": {"$exists": True}},
+            {"$set": {"last_activity_at": now}},
+        )
+        if result and result.matched_count:
+            self._common_vip_activity_written[key] = now
+
+    async def _record_common_vip_voice_activity(self, guild: discord.Guild, member: discord.Member, doc: dict, now: datetime):
+        voice = member.voice
+        if not voice or not voice.channel or voice.channel == guild.afk_channel:
+            return False
+        result = await asyncio.to_thread(
+            vip_col.update_one,
+            {"_id": doc["_id"], "role_source": {"$in": list(COMMON_VIP_SOURCES)}, "role_id": doc["role_id"]},
+            {"$set": {"last_activity_at": now}},
+        )
+        return bool(result and result.matched_count)
+
+    async def _delete_inactive_common_vip(self, guild: discord.Guild, user_id: int, document_id, cutoff: datetime):
+        async with self._get_vip_lock(user_id, guild.id):
+            if not is_db_online():
+                return
+            doc = await asyncio.to_thread(vip_col.find_one, {"_id": document_id})
+            if not doc or doc.get("role_source") not in COMMON_VIP_SOURCES or not self._vip_doc_belongs_to_guild(guild, doc):
+                return
+            selected_doc = await self._get_vip_doc(guild, user_id)
+            if not is_db_online():
+                return
+            if not selected_doc or selected_doc["_id"] != document_id:
+                return
+            if doc.get("status") == "inactive" or (doc.get("status") == "needs_review" and doc.get("cleanup_reason") != "inactivity_delete_failed"):
+                return
+            role_id = _to_int_or_none(doc.get("role_id"))
+            activity_at = doc.get("last_activity_at")
+            if not role_id or not isinstance(activity_at, datetime):
+                return
+            if activity_at.tzinfo is None:
+                activity_at = activity_at.replace(tzinfo=timezone.utc)
+            if activity_at > cutoff:
+                if doc.get("cleanup_reason") == "inactivity_delete_failed":
+                    await self._update_vip_role_with_snapshot(
+                        user_id,
+                        {"$set": {"status": "active", "review_required": False},
+                         "$unset": {"cleanup_reason": "", "cleanup_checked_at": "", "inactivity_retry_after": ""}},
+                        "inactivity:activity_resumed", guild_id=guild.id,
+                    )
+                return
+            member = guild.get_member(user_id)
+            if member is None:
+                try:
+                    member = await guild.fetch_member(user_id)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    return
+            if member.bot or (member.voice and member.voice.channel and member.voice.channel != guild.afk_channel):
+                if not member.bot:
+                    await self._record_common_vip_voice_activity(guild, member, doc, datetime.now(timezone.utc))
+                return
+            role = guild.get_role(role_id)
+            if role and (not self._is_personal_vip_role(role) or role.id == _to_int_or_none(doc.get("highlight_id")) or not bot_can_manage_role(guild, role)):
+                log.warning("vip_inactivity_unsafe_role guild_id=%s user_id=%s role_id=%s", guild.id, user_id, role_id)
+                return
+            conflicting = await asyncio.to_thread(
+                vip_col.find_one,
+                {"_id": {"$ne": document_id}, "role_id": {"$in": [str(role_id), role_id]}},
+            )
+            if not is_db_online():
+                return
+            if conflicting:
+                log.warning("vip_inactivity_shared_role guild_id=%s user_id=%s role_id=%s", guild.id, user_id, role_id)
+                return
+            if role:
+                try:
+                    await role.delete(reason=f"VIP comum sem atividade do dono por {COMMON_VIP_INACTIVITY_DAYS} dias")
+                except discord.NotFound:
+                    role = None
+                except (discord.Forbidden, discord.HTTPException) as exc:
+                    retry_after = datetime.now(timezone.utc) + timedelta(seconds=COMMON_VIP_DELETE_RETRY_SECONDS)
+                    await self._update_vip_role_with_snapshot(
+                        user_id,
+                        {"$set": {"status": "needs_review", "review_required": True,
+                                  "cleanup_reason": "inactivity_delete_failed", "cleanup_checked_at": datetime.now(timezone.utc),
+                                  "inactivity_retry_after": retry_after}},
+                        "inactivity:delete_failed", guild_id=guild.id,
+                    )
+                    log.warning("vip_inactivity_delete_failed guild_id=%s user_id=%s role_id=%s error=%s", guild.id, user_id, role_id, exc)
+                    return
+            now = datetime.now(timezone.utc)
+            await self._update_vip_role_with_snapshot(
+                user_id,
+                {"$set": {"status": "inactive", "entitlement_active": False, "review_required": False,
+                          "last_role_id": str(role_id), "disabled_reason": "owner_inactive_21_days",
+                          "disabled_at": now, "inactivity_deleted_at": now},
+                 "$unset": {"role_id": "", "inactivity_retry_after": "", "cleanup_reason": "", "cleanup_checked_at": ""}},
+                "inactivity:delete_common_role", guild_id=guild.id,
+            )
+            saved = await asyncio.to_thread(vip_col.find_one, {"_id": document_id})
+            if not saved or saved.get("status") != "inactive" or saved.get("role_id") is not None:
+                log.error("vip_inactivity_state_not_saved guild_id=%s user_id=%s role_id=%s", guild.id, user_id, role_id)
+                return
+            self._common_vip_owners.pop((guild.id, user_id), None)
+            log.info("vip_inactivity_role_deleted guild_id=%s user_id=%s role_id=%s", guild.id, user_id, role_id)
+            try:
+                await self.enviar_log(
+                    guild, "VIP comum excluído por inatividade",
+                    [("Dono", member.mention), ("Cargo excluído", f"{role.name if role else 'Cargo ausente'} (`{role_id}`)"),
+                     ("Última atividade registrada", f"<t:{int(activity_at.timestamp())}:F>")],
+                    discord.Color.orange(),
+                )
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException) as exc:
+                log.warning("vip_inactivity_audit_channel_failed guild_id=%s role_id=%s error=%s", guild.id, role_id, exc)
+
+    @tasks.loop(minutes=10)
+    async def check_inactive_common_vips(self):
+        try:
+            await self._check_inactive_common_vips_once()
+        except Exception:
+            log.exception("check_inactive_common_vips_iteration_failed")
+
+    async def _check_inactive_common_vips_once(self):
+        if not is_db_online():
+            return
+        docs = await asyncio.to_thread(lambda: list(vip_col.find({"role_source": {"$in": list(COMMON_VIP_SOURCES)}, "role_id": {"$exists": True}})))
+        if not is_db_online():
+            return
+        owners = {}
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=COMMON_VIP_INACTIVITY_DAYS)
+        for doc in docs:
+            uid = _to_int_or_none(vip_document_user_id(doc))
+            if uid is None or doc.get("status") == "inactive":
+                continue
+            for guild in self.bot.guilds:
+                if not self._vip_doc_belongs_to_guild(guild, doc):
+                    continue
+                owners[(guild.id, uid)] = doc["_id"]
+                activity_at = doc.get("last_activity_at")
+                observed_at = doc.get("inactivity_observed_at")
+                if isinstance(observed_at, datetime) and observed_at.tzinfo is None:
+                    observed_at = observed_at.replace(tzinfo=timezone.utc)
+                if not isinstance(activity_at, datetime) or not isinstance(observed_at, datetime) or observed_at < now - timedelta(minutes=30):
+                    # Historical activity and activity during bot/database outages are unknown.
+                    await asyncio.to_thread(
+                        vip_col.update_one,
+                        {"_id": doc["_id"], "role_id": doc["role_id"]},
+                        {"$set": {"last_activity_at": now, "inactivity_observed_at": now}},
+                    )
+                    continue
+                await asyncio.to_thread(
+                    vip_col.update_one,
+                    {"_id": doc["_id"], "role_id": doc["role_id"]},
+                    {"$set": {"inactivity_observed_at": now}},
+                )
+                if not is_db_online():
+                    return
+                if activity_at.tzinfo is None:
+                    activity_at = activity_at.replace(tzinfo=timezone.utc)
+                member = guild.get_member(uid)
+                if member and not member.bot and await self._record_common_vip_voice_activity(guild, member, doc, now):
+                    continue
+                retry_after = doc.get("inactivity_retry_after")
+                if isinstance(retry_after, datetime):
+                    if retry_after.tzinfo is None:
+                        retry_after = retry_after.replace(tzinfo=timezone.utc)
+                    if retry_after > now:
+                        continue
+                if activity_at <= cutoff:
+                    await self._delete_inactive_common_vip(guild, uid, doc["_id"], cutoff)
+        self._common_vip_owners = owners
+        self._common_vip_activity_written = {key: value for key, value in self._common_vip_activity_written.items() if key in owners}
+
     @tasks.loop(minutes=10)
     async def reconcile_absent_vips(self):
         records = await asyncio.to_thread(lambda: list(vip_col.find({})))
@@ -1867,6 +2060,9 @@ class VipSystem(commands.Cog):
     @reconcile_absent_vips.before_loop
     async def before_reconcile(self): await self.bot.wait_until_ready()
 
+    @check_inactive_common_vips.before_loop
+    async def before_inactivity_check(self): await self.bot.wait_until_ready()
+
     @check_temproles.error
     async def check_temproles_error(self, error):
         log.exception("check_temproles_failed error=%s", error)
@@ -1874,6 +2070,10 @@ class VipSystem(commands.Cog):
     @reconcile_absent_vips.error
     async def reconcile_absent_vips_error(self, error):
         log.exception("reconcile_absent_vips_failed error=%s", error)
+
+    @check_inactive_common_vips.error
+    async def check_inactive_common_vips_error(self, error):
+        log.exception("check_inactive_common_vips_failed error=%s", error)
 
 async def setup(bot):
     await bot.add_cog(VipSystem(bot))
