@@ -1922,6 +1922,14 @@ class VipSystem(commands.Cog):
             if conflicting:
                 log.warning("vip_inactivity_shared_role guild_id=%s user_id=%s role_id=%s", guild.id, user_id, role_id)
                 return
+            if doc.get("guild_id") is None:
+                scoped = await asyncio.to_thread(
+                    vip_col.update_one,
+                    {"_id": document_id, "role_id": doc["role_id"], "guild_id": {"$exists": False}},
+                    {"$set": {"guild_id": str(guild.id), "user_id": str(user_id)}},
+                )
+                if not is_db_online() or not scoped or not scoped.matched_count:
+                    return
             if role:
                 try:
                     await role.delete(reason=f"VIP comum sem atividade do dono por {COMMON_VIP_INACTIVITY_DAYS} dias")

@@ -116,6 +116,12 @@ class VipInactivityTests(unittest.IsolatedAsyncioTestCase):
         self.system._delete_inactive_common_vip.assert_not_awaited()
         self.assertLess((datetime.now(timezone.utc) - self.doc["last_activity_at"]).total_seconds(), 5)
 
+    async def test_legacy_record_gets_guild_scope_before_role_deletion(self):
+        self.doc.pop("guild_id")
+        await self.system._delete_inactive_common_vip(self.guild, 2, self.doc["_id"], self.now - timedelta(days=21))
+        self.role.delete.assert_awaited_once()
+        self.assertEqual(self.doc["guild_id"], "1")
+
 
 if __name__ == "__main__":
     unittest.main()
