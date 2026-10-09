@@ -138,6 +138,7 @@ async def open_common_panel(self, it, cor_primaria: str = None, cor_secundaria: 
                     "missing_role": False,
                     "missing_member": False,
                     "last_seen_at": datetime.now(timezone.utc),
+                    "last_activity_at": datetime.now(timezone.utc),
                 },
                 "$unset": {
                     "cleanup_reason": "",
@@ -152,6 +153,9 @@ async def open_common_panel(self, it, cor_primaria: str = None, cor_secundaria: 
             guild_id=it.guild.id,
             upsert=True
         )
+        current_doc = await self._get_vip_doc(it.guild, it.user.id)
+        if current_doc:
+            self._common_vip_owners[(it.guild.id, it.user.id)] = current_doc["_id"]
 
         if role not in it.user.roles:
             try:
