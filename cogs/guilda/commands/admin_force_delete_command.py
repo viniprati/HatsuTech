@@ -34,6 +34,6 @@ async def execute(self, it: discord.Interaction, alvo: discord.Member):
     embed.set_footer(text=f"Solicitado por Admin: {it.user.display_name}")
 
 
-    view = GuildConfirmDelete(guild_id=id_guilda, author_id=it.user.id)
+    view = GuildConfirmDelete(guild_id=id_guilda, author_id=it.user.id, require_admin=True)
 
     await it.response.send_message(embed=embed, view=view, ephemeral=True)

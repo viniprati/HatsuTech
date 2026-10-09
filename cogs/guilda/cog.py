@@ -5,6 +5,7 @@ from discord import ui
 import datetime
 import logging
 import re
+import asyncio
 
 
 from database import guilds_col
@@ -119,10 +120,11 @@ class GuildInviteView(ui.View):
         await interaction.response.edit_message(content=f"❌ **{interaction.user.name}** recusou o convite.", view=self)
 
 class GuildConfirmDelete(ui.View):
-    def __init__(self, guild_id, author_id: int):
+    def __init__(self, guild_id, author_id: int, require_admin: bool = False):
         super().__init__(timeout=60)
         self.guild_id = guild_id
         self.author_id = author_id
+        self.require_admin = require_admin
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
@@ -132,8 +134,15 @@ class GuildConfirmDelete(ui.View):
 
     @ui.button(label="Sim, Deletar Guilda", style=discord.ButtonStyle.danger, emoji="💣")
     async def confirm(self, interaction: discord.Interaction, button: ui.Button):
-        guilds_col.delete_one({"_id": self.guild_id})
-        await interaction.response.edit_message(content="🗑️ **Guilda deletada com sucesso!**", view=None, embed=None)
+        if self.require_admin and not has_full_access(interaction.user) and not interaction.permissions.administrator:
+            return await interaction.response.send_message("Você não tem mais permissão para excluir guildas.", ephemeral=True)
+        await interaction.response.defer()
+        result = await asyncio.to_thread(guilds_col.delete_one, {"_id": self.guild_id})
+        if not getattr(result, "acknowledged", False):
+            return await interaction.followup.send("Não consegui confirmar a exclusão no banco. Tente novamente.", ephemeral=True)
+        if not result.deleted_count:
+            return await interaction.edit_original_response(content="A guilda já não está cadastrada.", view=None, embed=None)
+        await interaction.edit_original_response(content="🗑️ Guilda excluída do banco de dados.", view=None, embed=None)
 
     @ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="✖️")
     async def cancel(self, interaction: discord.Interaction, button: ui.Button):
