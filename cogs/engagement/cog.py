@@ -178,7 +178,7 @@ HELP_DATA = {
         ]
     },
     "mod": {
-        "label": "Staff",
+        "label": "Moderação",
         "emoji": "<a:a6_staff:1512192546732900543>",
         "description": "Ferramentas de moderação e manutenção.",
         "color": discord.Color.orange(),
@@ -187,13 +187,21 @@ HELP_DATA = {
             ("🧹", "limpar", "Limpa mensagens do canal.", "Staff"),
             ("🔒", "lock", "Tranca o canal atual.", "Staff"),
             ("🔓", "unlock", "Destranca o canal atual.", "Staff"),
-            ("➕", "addcargo", "Adiciona um cargo a um usuário.", "Staff"),
+        ]
+    },
+    "staff_roles": {
+        "label": "Cargos da Staff",
+        "emoji": "🎭",
+        "description": "Concessão de cargos, prazos e personalização.",
+        "color": discord.Color.orange(),
+        "commands": [
+            ("➕", "addcargo", "Adiciona um cargo sem prazo a um membro.", "Staff"),
+            ("⏳", "cargo_temporario conceder", "Adiciona um cargo por tempo determinado.", "Staff"),
+            ("⌛", "cargo_temporario ajustar", "Reduz o prazo ou retira o cargo do membro.", "Staff"),
+            ("📋", "cargo_temporario consultar", "Lista cargos temporários e datas de expiração.", "Admin"),
             ("🖼️", "cargopng", "Cria um cargo com ícone e adiciona membros.", "Staff"),
             ("🖌️", "seticon", "Altera o ícone de um cargo existente.", "Staff"),
-            ("⏳", "temprole", "Define um cargo temporário.", "Staff"),
-            ("⌛", "temprole_remover", "Abre painel para reduzir ou remover tempo.", "Staff"),
-            ("<:Vip_Requiem:1512192545172492449>", "vervips", "Lista membros com cargos temporários ativos.", "Staff"),
-        ]
+        ],
     },
     "admin": {
         "label": "Administração",
