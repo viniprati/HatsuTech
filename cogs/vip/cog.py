@@ -553,35 +553,49 @@ class VipHighlightView(ui.View):
 class VipAdminView(ui.View):
     def __init__(self, data, title, user_id, notice=None):
         super().__init__(timeout=180)
-        self.data = data; self.title = title; self.user_id = user_id; self.notice = notice; self.page = 0; self.per_page = 10
+        self.data = data
+        self.title = title
+        self.user_id = user_id
+        self.notice = notice
+        self.page = 0
+        self.per_page = 5
         self.total_pages = max(1, (len(data) + self.per_page - 1) // self.per_page)
         self.update_buttons()
 
     def update_buttons(self):
         self.prev_btn.disabled = self.page == 0
         self.next_btn.disabled = self.page == self.total_pages - 1
-        self.counter_btn.label = f"Pagina {self.page + 1}/{self.total_pages}"
+        self.counter_btn.label = f"Página {self.page + 1}/{self.total_pages}"
 
     def get_embed(self):
         start = self.page * self.per_page
         current = self.data[start:start+self.per_page]
-        description = "".join([i + "\n" for i in current]) or "Nada."
-        if len(description) > 4096:
-            description = description[:4068] + "\n[conteudo truncado]"
-        e = discord.Embed(title=self.title, description=description, color=discord.Color.dark_theme())
+        description = "\n\n".join(current) or "Nenhum registro encontrado."
+        description = truncate_discord_text(description, DISCORD_EMBED_DESCRIPTION_LIMIT, "\n[conteúdo truncado]")
+        e = discord.Embed(
+            title=self.title,
+            description=description,
+            color=discord.Color.dark_theme(),
+        )
+        footer = f"Página {self.page + 1}/{self.total_pages} • {len(self.data)} registro(s)"
         if self.notice:
-            e.set_footer(text=self.notice)
+            footer += f" • {self.notice}"
+        e.set_footer(text=footer[:2048])
         return e
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.user_id:
+            return True
+        await interaction.response.send_message("Somente quem abriu a consulta pode navegar neste painel.", ephemeral=True)
+        return False
 
     @ui.button(label="<", style=discord.ButtonStyle.secondary, disabled=True)
     async def prev_btn(self, it, b):
-        if it.user.id != self.user_id: return
         self.page -= 1; self.update_buttons(); await it.response.edit_message(embed=self.get_embed(), view=self)
     @ui.button(label="1/1", style=discord.ButtonStyle.gray, disabled=True)
     async def counter_btn(self, it, b): pass
     @ui.button(label=">", style=discord.ButtonStyle.secondary, disabled=True)
     async def next_btn(self, it, b):
-        if it.user.id != self.user_id: return
         self.page += 1; self.update_buttons(); await it.response.edit_message(embed=self.get_embed(), view=self)
 
 

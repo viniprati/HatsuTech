@@ -50,12 +50,37 @@ def fmt_rank_score(value: float) -> str:
     return f"{int(float(value or 0)):,}".replace(",", ".")
 
 class AdminDashboardView(ui.View):
-    def __init__(self, bot, cog):
+    def __init__(self, bot, cog, author_id: int):
         super().__init__(timeout=300)
         self.bot = bot
         self.cog = cog
+        self.author_id = author_id
         self.snapshot = None
         self.snapshot_at = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.author_id:
+            return True
+        await interaction.response.send_message("Somente quem abriu o painel pode usar estes botões.", ephemeral=True)
+        return False
+
+    def build_overview_embed(self, guild: discord.Guild) -> discord.Embed:
+        total_members = self.snapshot["total_members"] or 1
+        active_today = self.snapshot["active_today"]
+        tag_users = self.snapshot["server_tag_users"]
+        embed = discord.Embed(
+            title="🛡️ Painel Administrativo",
+            description=(
+                "Escolha uma seção nos botões abaixo.\n\n"
+                f"**Ativos hoje:** {active_today} • **Engajamento:** {active_today / total_members * 100:.1f}%\n"
+                f"**Tag do servidor:** {tag_users} ({tag_users / total_members * 100:.1f}%)"
+            ),
+            color=0x2b2d31,
+        )
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        embed.set_footer(text=f"Atualizado às {self.snapshot_at.strftime('%H:%M:%S')} UTC")
+        return embed
 
     def _sum_daily_metric(self, col, day_key: str) -> int:
         pipeline = [
@@ -169,7 +194,7 @@ class AdminDashboardView(ui.View):
         e.add_field(name="📈 Engajamento Diário", value=f"Ativos Hoje: **{active_today}**\nTaxa: `{engagement_rate:.1f}%` dos membros", inline=True)
         e.add_field(name="🏷️ Tag do Servidor", value=f"Usando: **{tag_users}**\nTaxa: `{tag_rate:.1f}%`", inline=True)
         e.add_field(name="📦 Atualização", value=f"Atualizado: `{self.snapshot_at.strftime('%H:%M:%S')}`", inline=True)
-        await interaction.followup.send(embed=e, ephemeral=True)
+        await interaction.edit_original_response(embed=e, view=self)
 
     @ui.button(label="💬 Estatísticas Chat", style=discord.ButtonStyle.secondary, emoji="📝", row=0)
     async def chat_stats(self, interaction: discord.Interaction, button: ui.Button):
@@ -192,7 +217,7 @@ class AdminDashboardView(ui.View):
         top_global = snap["top_chat_global"]
         if top_global:
             e.add_field(name="🌟 Top Global", value=f"<@{top_global['_id']}>\nTotal: `{int(top_global.get('count', 0)):,}` msgs".replace(",", "."), inline=False)
-        await interaction.followup.send(embed=e, ephemeral=True)
+        await interaction.edit_original_response(embed=e, view=self)
 
     @ui.button(label="🎙️ Estatísticas Voz", style=discord.ButtonStyle.secondary, emoji="🎧", row=0)
     async def voice_stats(self, interaction: discord.Interaction, button: ui.Button):
@@ -219,7 +244,7 @@ class AdminDashboardView(ui.View):
         top_global = snap["top_voice_global"]
         if top_global:
             e.add_field(name="🌟 Top Global Voz", value=f"<@{top_global['_id']}>\nTempo: `{self._fmt_duration(top_global.get('time', 0))}`", inline=False)
-        await interaction.followup.send(embed=e, ephemeral=True)
+        await interaction.edit_original_response(embed=e, view=self)
 
     @ui.button(label="💎 Gestão VIP", style=discord.ButtonStyle.success, emoji="👑", row=1)
     async def vip_stats(self, interaction: discord.Interaction, button: ui.Button):
@@ -238,7 +263,7 @@ class AdminDashboardView(ui.View):
         e.add_field(name="🌑 Mugetsus", value=f"**{mugetsus}**", inline=True)
         e.add_field(name="⚔️ Berserks", value=f"**{berserks}**", inline=True)
         e.add_field(name="🚀 Boosters", value=f"**{boosters}**", inline=True)
-        await interaction.followup.send(embed=e, ephemeral=True)
+        await interaction.edit_original_response(embed=e, view=self)
 
     @ui.button(label="🚨 Eventos", style=discord.ButtonStyle.secondary, emoji="📌", row=1)
     async def event_stats(self, interaction: discord.Interaction, button: ui.Button):
@@ -269,13 +294,13 @@ class AdminDashboardView(ui.View):
         if not alerts:
             alerts.append("Nenhum alerta crítico.")
         e.add_field(name="Alertas", value="\n".join(f"- {a}" for a in alerts), inline=False)
-        await interaction.followup.send(embed=e, ephemeral=True)
+        await interaction.edit_original_response(embed=e, view=self)
 
     @ui.button(label="🔄 Atualizar", style=discord.ButtonStyle.gray, row=2)
     async def refresh_panel(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.defer(ephemeral=True)
         await self.ensure_snapshot(interaction.guild, force=True)
-        await interaction.followup.send("✅ Painel atualizado com dados mais recentes.", ephemeral=True)
+        await interaction.edit_original_response(embed=self.build_overview_embed(interaction.guild), view=self)
 
 
 class RankSystem(commands.Cog):

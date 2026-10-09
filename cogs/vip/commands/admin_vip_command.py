@@ -88,17 +88,16 @@ async def execute(self, it):
 
             role_id = data.get("role_id")
             role = it.guild.get_role(_to_int_or_none(role_id)) if role_id else None
-            if role:
-                role_text = f"VIP {role.mention}"
-            else:
-                role_text = "VIP sem cargo pessoal"
+            role_text = role.mention if role else "Sem cargo comum ativo"
 
             highlight_id = data.get("highlight_id")
             highlight = it.guild.get_role(_to_int_or_none(highlight_id)) if highlight_id else None
             if highlight:
-                role_text = f"{role_text} | Destaque {highlight.mention}"
+                highlight_text = highlight.mention
             elif highlight_id:
-                role_text = f"{role_text} | Destaque ausente `{highlight_id}`"
+                highlight_text = f"Cargo ausente (`{highlight_id}`)"
+            else:
+                highlight_text = "Sem destaque"
 
             flags = []
             eligible = member and self._is_vip_eligible(member)
@@ -114,8 +113,12 @@ async def execute(self, it):
                 flags.append(f"origem: `{data.get('role_source')}`")
             if str(data.get("_id")) != str(uid_text):
                 flags.append("chave composta")
-            suffix = f" | {'; '.join(flags)}" if flags else ""
-            lines.append(f"{member_text} | {role_text}{suffix}")
+            status_text = "; ".join(flags) if flags else "Sem observações"
+            lines.append(
+                f"**{len(lines) + 1}. {member_text}**\n"
+                f"Cargo comum: {role_text} • Destaque: {highlight_text}\n"
+                f"Situação: {status_text}"
+            )
             visible_records.append(data)
 
         compound_key_count = sum(
@@ -128,7 +131,7 @@ async def execute(self, it):
         if records_truncated:
             notices.append(f"resultado truncado em {ADMIN_VIP_MAX_RECORDS} itens por consulta")
         notice = " | ".join(notices) if notices else None
-        view = VipAdminView(lines, f"Admin VIPs ({len(lines)})", it.user.id, notice=notice)
+        view = VipAdminView(lines, "VIPs pessoais • consulta administrativa", it.user.id, notice=notice)
         await it.followup.send(embed=view.get_embed(), view=view, ephemeral=True)
     except Exception:
         log.exception("Falha ao montar ou enviar /admin_vip guild_id=%s", guild_id)

@@ -12,7 +12,7 @@ async def execute(self, it: discord.Interaction):
     if not all_guilds:
         return await it.response.send_message("❌ Nenhuma guilda foi criada ainda.", ephemeral=True)
 
-    view = GuildAdminPagination(all_guilds)
+    view = GuildAdminPagination(all_guilds, it.user.id)
     if view.total_pages <= 1:
         view.next_button.disabled = True
 

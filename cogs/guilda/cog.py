@@ -197,12 +197,19 @@ class GuildIconView(ui.View):
 
 
 class GuildAdminPagination(ui.View):
-    def __init__(self, guild_list):
+    def __init__(self, guild_list, author_id: int):
         super().__init__(timeout=180)
         self.guild_list = guild_list
+        self.author_id = author_id
         self.current_page = 0
-        self.items_per_page = 10
+        self.items_per_page = 5
         self.total_pages = (len(guild_list) - 1) // self.items_per_page + 1
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.author_id:
+            return True
+        await interaction.response.send_message("Somente quem abriu a consulta pode navegar neste painel.", ephemeral=True)
+        return False
 
     def create_embed(self):
         start = self.current_page * self.items_per_page
@@ -210,8 +217,8 @@ class GuildAdminPagination(ui.View):
         current_data = self.guild_list[start:end]
 
         embed = discord.Embed(
-            title="🛡️ Painel Administrativo de Guildas",
-            description=f"Total de Guildas: **{len(self.guild_list)}**\n\n",
+            title="🛡️ Guildas • consulta administrativa",
+            description=f"**{len(self.guild_list)} guilda(s)** encontradas, ordenadas por XP total.\n\n",
             color=discord.Color.dark_purple()
         )
 
@@ -223,13 +230,12 @@ class GuildAdminPagination(ui.View):
             xp = guild.get("total_xp", 0)
             leader_text = guild.get("_leader_text", "Líder ausente")
 
-            text += f"`#{i:02d}` {emoji} **{name}**\n"
-            text += f"└ 👑 Líder: {leader_text}\n"
-            text += f"└ 👥 Membros ativos: `{member_count}` | ✨ XP total: `{xp:,}`\n"
-            text += f"└ 🆔 ID: `{guild['_id']}`\n\n"
+            text += f"**{i}. {emoji} {name}**\n"
+            text += f"Líder: {leader_text}\n"
+            text += f"Membros: `{member_count}` • XP: `{xp:,}` • ID: `{guild['_id']}`\n\n"
 
-        embed.description += text
-        embed.set_footer(text=f"Página {self.current_page + 1}/{self.total_pages}")
+        embed.description = (embed.description + text)[:4096]
+        embed.set_footer(text=f"Página {self.current_page + 1}/{self.total_pages} • {len(self.guild_list)} guilda(s)")
         return embed
 
     async def update_buttons(self, interaction):
