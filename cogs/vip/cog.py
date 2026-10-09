@@ -825,6 +825,11 @@ class TempRoleAdjustView(ui.View):
 
 
 class VipSystem(commands.Cog):
+    cargo_temporario = app_commands.Group(
+        name="cargo_temporario",
+        description="Conceder, consultar e ajustar cargos com prazo de validade.",
+    )
+
     def __init__(self, bot):
         self.bot = bot
         self._vip_locks = {}
@@ -1682,6 +1687,18 @@ class VipSystem(commands.Cog):
 
         await execute(self, it, usuario, cargo, tempo, somar)
 
+    @cargo_temporario.command(name="conceder", description="Concede um cargo por tempo determinado.")
+    @app_commands.describe(tempo="Duração: 1d, 2h, 30m ou 10s", somar="Somar ao prazo atual")
+    @check_owner_or_perm(manage_roles=True)
+    async def cargo_temporario_conceder(
+        self, it: discord.Interaction, usuario: discord.Member, cargo: discord.Role,
+        tempo: str, somar: bool = False,
+    ):
+        if not await ensure_guild_interaction(it, "o comando /cargo_temporario conceder"):
+            return
+        from .commands.temprole_command import execute
+        await execute(self, it, usuario, cargo, tempo, somar)
+
     @app_commands.command(name="temprole_remover", description="Abre painel para reduzir/remover tempo de um temprole.")
     @check_owner_or_perm(manage_roles=True)
     async def temprole_remover(self, it: discord.Interaction, usuario: discord.Member, cargo: discord.Role):
@@ -1690,6 +1707,14 @@ class VipSystem(commands.Cog):
 
         from .commands.temprole_remover_command import execute
 
+        await execute(self, it, usuario, cargo)
+
+    @cargo_temporario.command(name="ajustar", description="Abre o painel para reduzir o prazo ou retirar o cargo.")
+    @check_owner_or_perm(manage_roles=True)
+    async def cargo_temporario_ajustar(self, it: discord.Interaction, usuario: discord.Member, cargo: discord.Role):
+        if not await ensure_guild_interaction(it, "o comando /cargo_temporario ajustar"):
+            return
+        from .commands.temprole_remover_command import execute
         await execute(self, it, usuario, cargo)
 
     @app_commands.command(name="vervips", description="Lista todos os membros com cargos temporários ativos.")
@@ -1708,6 +1733,22 @@ class VipSystem(commands.Cog):
 
         from .commands.vervips_command import execute
 
+        await execute(self, it, origem.value if origem else "todos")
+
+    @cargo_temporario.command(name="consultar", description="Lista cargos temporários ativos e seus prazos.")
+    @check_owner_or_perm(administrator=True)
+    @app_commands.choices(
+        origem=[
+            app_commands.Choice(name="Todos", value="todos"),
+            app_commands.Choice(name="Concedido pela staff", value="temprole"),
+            app_commands.Choice(name="Loja Kaguya", value="loja"),
+            app_commands.Choice(name="Legado/sem origem", value="legado"),
+        ]
+    )
+    async def cargo_temporario_consultar(self, it: discord.Interaction, origem: app_commands.Choice[str] = None):
+        if not await ensure_guild_interaction(it, "o comando /cargo_temporario consultar"):
+            return
+        from .commands.vervips_command import execute
         await execute(self, it, origem.value if origem else "todos")
 
     @app_commands.command(name="fix_database", description="⚠️ Admin: Corrige e unifica tempos duplicados no banco.")
