@@ -120,10 +120,11 @@ class GuildInviteView(ui.View):
         await interaction.response.edit_message(content=f"❌ **{interaction.user.name}** recusou o convite.", view=self)
 
 class GuildConfirmDelete(ui.View):
-    def __init__(self, guild_id, author_id: int):
+    def __init__(self, guild_id, author_id: int, require_admin: bool = False):
         super().__init__(timeout=60)
         self.guild_id = guild_id
         self.author_id = author_id
+        self.require_admin = require_admin
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
@@ -133,7 +134,7 @@ class GuildConfirmDelete(ui.View):
 
     @ui.button(label="Sim, Deletar Guilda", style=discord.ButtonStyle.danger, emoji="💣")
     async def confirm(self, interaction: discord.Interaction, button: ui.Button):
-        if not has_full_access(interaction.user) and not interaction.permissions.administrator:
+        if self.require_admin and not has_full_access(interaction.user) and not interaction.permissions.administrator:
             return await interaction.response.send_message("Você não tem mais permissão para excluir guildas.", ephemeral=True)
         await interaction.response.defer()
         result = await asyncio.to_thread(guilds_col.delete_one, {"_id": self.guild_id})
