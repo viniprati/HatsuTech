@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 
 from admin_audit import send_admin_audit_dm
-from database import vip_col, vip_recovery_logs_col, vip_role_presets_col, temp_col, is_db_online
+from database import vip_col, vip_recovery_logs_col, vip_role_presets_col, temp_col
 
 
 from utils import (
@@ -1715,8 +1715,6 @@ class VipSystem(commands.Cog):
 
     @tasks.loop(seconds=60)
     async def check_temproles(self):
-        if not is_db_online():
-            return
         now = time.time()
         expired = await asyncio.to_thread(lambda: list(temp_col.find({"end_time": {"$lte": now}})))
         for i in expired:

@@ -36,7 +36,8 @@ async def execute(
         new_end_time = now + duration
         action_msg = "substituido"
 
-    if cargo not in usuario.roles:
+    role_added = cargo not in usuario.roles
+    if role_added:
         try:
             await usuario.add_roles(cargo)
         except discord.Forbidden:
@@ -60,8 +61,20 @@ async def execute(
         upsert=True,
     )
     if not getattr(result, "acknowledged", False):
+        if role_added:
+            try:
+                await usuario.remove_roles(cargo, reason="Falha ao salvar expiração do temprole")
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException) as exc:
+                log.warning(
+                    "temprole_rollback_failed guild_id=%s user_id=%s role_id=%s error=%s",
+                    it.guild.id, usuario.id, cargo.id, exc,
+                )
+                return await it.response.send_message(
+                    "Não consegui salvar a expiração nem desfazer a concessão do cargo. Avise a administração.",
+                    ephemeral=True,
+                )
         return await it.response.send_message(
-            "O cargo foi aplicado, mas não consegui salvar a expiração. Avise a administração para corrigir o registro.",
+            "Não consegui salvar a expiração. A concessão foi desfeita; tente novamente mais tarde.",
             ephemeral=True,
         )
 
