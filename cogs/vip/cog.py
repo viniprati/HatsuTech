@@ -19,6 +19,8 @@ from utils import (
     process_icon,
     BOT_OWNER_ID,
     has_full_access,
+    can_manage_role,
+    bot_can_manage_role,
     ensure_db_online,
     ensure_guild_interaction,
     truncate_discord_text,
@@ -426,7 +428,19 @@ class VipMainView(ui.View):
     async def delete(self, it, b):
         if not await self._ensure_owner_binding(it):
             return
+        if not await ensure_db_online(it, "a exclusão do VIP"):
+            return
         async with self.cog._get_vip_lock(it.user.id, it.guild.id):
+            try:
+                await self.role.delete(reason="VIP pessoal excluído pelo dono")
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                log.warning("vip_owner_delete_failed guild_id=%s user_id=%s role_id=%s error=%s",
+                            it.guild.id, it.user.id, self.role.id, exc)
+                return await it.response.send_message(
+                    "Não consegui excluir o cargo VIP. Verifique minhas permissões e a hierarquia.", ephemeral=True,
+                )
             await self.cog._update_vip_role_with_snapshot(
                 it.user.id,
                 {
@@ -443,10 +457,13 @@ class VipMainView(ui.View):
                 actor_id=it.user.id,
                 guild_id=it.guild.id,
             )
-            try:
-                await self.role.delete()
-            except (discord.Forbidden, discord.HTTPException):
-                pass
+            updated = await self.cog._get_vip_doc(it.guild, it.user.id)
+            if not updated or updated.get("status") != "inactive":
+                log.error("vip_owner_delete_db_failed guild_id=%s user_id=%s role_id=%s",
+                          it.guild.id, it.user.id, self.role.id)
+                return await it.response.send_message(
+                    "O cargo foi excluído, mas não consegui atualizar o registro. Avise a administração.", ephemeral=True,
+                )
         await it.response.send_message("VIP deletado.", ephemeral=True); self.stop()
 
 
@@ -494,7 +511,19 @@ class VipHighlightView(ui.View):
     async def delete_highlight(self, it, b):
         if not await self._ensure_owner_binding(it):
             return
+        if not await ensure_db_online(it, "a exclusão do destaque"):
+            return
         async with self.cog._get_vip_lock(it.user.id, it.guild.id):
+            try:
+                await self.role.delete(reason="Destaque VIP excluído pelo dono")
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                log.warning("vip_highlight_delete_failed guild_id=%s user_id=%s role_id=%s error=%s",
+                            it.guild.id, it.user.id, self.role.id, exc)
+                return await it.response.send_message(
+                    "Não consegui excluir o destaque. Verifique minhas permissões e a hierarquia.", ephemeral=True,
+                )
             await self.cog._update_vip_role_with_snapshot(
                 it.user.id,
                 {
@@ -511,10 +540,13 @@ class VipHighlightView(ui.View):
                 actor_id=it.user.id,
                 guild_id=it.guild.id,
             )
-            try:
-                await self.role.delete()
-            except (discord.Forbidden, discord.HTTPException):
-                pass
+            updated = await self.cog._get_vip_doc(it.guild, it.user.id)
+            if not updated or updated.get("highlight_active") is not False:
+                log.error("vip_highlight_delete_db_failed guild_id=%s user_id=%s role_id=%s",
+                          it.guild.id, it.user.id, self.role.id)
+                return await it.response.send_message(
+                    "O destaque foi excluído, mas não consegui atualizar o registro. Avise a administração.", ephemeral=True,
+                )
         await it.response.send_message("Destaque removido.", ephemeral=True); self.stop()
 
 
@@ -663,11 +695,15 @@ class TempRoleAdjustView(ui.View):
         return embed
 
     async def _remove_role_from_member(self):
-        if self.role in self.member.roles:
-            try:
-                await self.member.remove_roles(self.role, reason="Temprole removido pelo painel admin")
-            except (discord.Forbidden, discord.HTTPException):
-                pass
+        if self.role not in self.member.roles:
+            return True
+        try:
+            await self.member.remove_roles(self.role, reason="Temprole removido pelo painel admin")
+            return True
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException) as exc:
+            log.warning("temprole_manual_removal_failed guild_id=%s user_id=%s role_id=%s error=%s",
+                        self.member.guild.id, self.member.id, self.role.id, exc)
+            return False
 
     async def apply_time_reduction(self, interaction: discord.Interaction, seconds: int):
         if seconds <= 0:
@@ -683,8 +719,12 @@ class TempRoleAdjustView(ui.View):
         new_end = current_end - float(seconds)
 
         if new_end <= now_ts:
+            if not await self._remove_role_from_member():
+                return await interaction.response.send_message(
+                    "Não consegui retirar o cargo. Verifique minhas permissões e a hierarquia; o tempo foi mantido para nova tentativa.",
+                    ephemeral=True,
+                )
             await asyncio.to_thread(temp_col.delete_one, {"_id": data["_id"]})
-            await self._remove_role_from_member()
             embed = await self.build_embed()
             await interaction.response.edit_message(embed=embed, view=self)
             await interaction.followup.send("Tempo removido. O temprole foi encerrado.", ephemeral=True)
@@ -731,9 +771,12 @@ class TempRoleAdjustView(ui.View):
 
     async def remove_all(self, interaction: discord.Interaction):
         existing = await self._fetch_doc()
+        if existing and not await self._remove_role_from_member():
+            return await interaction.response.send_message(
+                "Não consegui retirar o cargo. Verifique minhas permissões e a hierarquia; o registro foi mantido.",
+                ephemeral=True,
+            )
         result = await asyncio.to_thread(temp_col.delete_many, self._query())
-        if result and getattr(result, "deleted_count", 0) > 0:
-            await self._remove_role_from_member()
         embed = await self.build_embed()
         await interaction.response.edit_message(embed=embed, view=self)
         if existing and getattr(result, "deleted_count", 0) > 0 and self.role.id in VIP_CONFIG:
@@ -1707,19 +1750,29 @@ class VipSystem(commands.Cog):
         for i in expired:
             try:
                 g = self.bot.get_guild(int(i.get("guild_id")))
-                if g:
+                if not g:
+                    log.warning("temprole_expiry_guild_unavailable record_id=%s", i.get("_id"))
+                    continue
+                r = g.get_role(int(i.get("role_id")))
+                if r:
                     m = g.get_member(int(i.get("user_id")))
-                    r = g.get_role(int(i.get("role_id")))
-                    if m and r and r in m.roles:
+                    if m is None:
+                        try:
+                            m = await g.fetch_member(int(i.get("user_id")))
+                        except discord.NotFound:
+                            m = None
+                        except (discord.Forbidden, discord.HTTPException) as e:
+                            log.warning("temprole_expiry_member_lookup_failed record_id=%s error=%s", i.get("_id"), e)
+                            continue
+                    if m and r in m.roles:
                         try:
                             await m.remove_roles(r, reason="Temprole expirado")
-                        except (discord.Forbidden, discord.HTTPException) as e:
-                            log.warning("Nao foi possivel remover temprole expirado %s: %s", i.get("_id"), e)
+                        except (discord.Forbidden, discord.NotFound, discord.HTTPException) as e:
+                            log.warning("temprole_expiry_removal_failed record_id=%s error=%s", i.get("_id"), e)
+                            continue
                 await asyncio.to_thread(temp_col.delete_one, {"_id": i["_id"]})
             except (TypeError, ValueError, KeyError) as e:
-                log.warning("Registro de temprole invalido removido/ignorado: %s (%s)", i, e)
-                if i.get("_id") is not None:
-                    await asyncio.to_thread(temp_col.delete_one, {"_id": i["_id"]})
+                log.warning("temprole_expiry_invalid_record record_id=%s error=%s", i.get("_id"), e)
 
     @tasks.loop(minutes=10)
     async def reconcile_absent_vips(self):
