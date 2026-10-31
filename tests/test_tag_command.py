@@ -41,7 +41,7 @@ class TagCommandTests(unittest.IsolatedAsyncioTestCase):
         self.cog = SimpleNamespace(tag_reminder_locks={})
         self.collection = SimpleNamespace(
             find_one=MagicMock(return_value=None),
-            update_one=MagicMock(return_value=SimpleNamespace(acknowledged=True)),
+            update_one=MagicMock(return_value=SimpleNamespace(acknowledged=True, upserted_id="reservation", matched_count=1)),
         )
         self.patches = [
             patch.object(tag, "ensure_db_online", AsyncMock(return_value=True)),
@@ -140,18 +140,80 @@ class TagCommandTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unacknowledged_history_stops_before_next_recipient(self):
         self.members.append(SimpleNamespace(**{**vars(self.member), "id": 43}))
-        self.collection.update_one.return_value = SimpleNamespace(acknowledged=False)
+        self.collection.update_one.side_effect = [
+            SimpleNamespace(acknowledged=True, upserted_id="reservation"),
+            SimpleNamespace(acknowledged=False),
+        ]
         await tag.execute(self.cog, self.it)
         self.member.send.assert_awaited_once()
         self.assertIn("registrar o resultado", self.it.edit_original_response.call_args.kwargs["content"])
 
-    async def test_rate_limit_stops_run_without_marking_delivery(self):
+    async def test_no_dm_when_delivery_reservation_cannot_be_persisted(self):
+        self.collection.update_one.return_value = SimpleNamespace(acknowledged=False)
+        await tag.execute(self.cog, self.it)
+        self.member.send.assert_not_awaited()
+
+    async def test_sent_dm_is_not_repeated_when_final_history_write_fails(self):
+        history = {}
+
+        def reserve_but_fail_final_update(query, update, **kwargs):
+            if "$setOnInsert" in update:
+                created = not history
+                if created:
+                    history.update(update["$setOnInsert"])
+                return SimpleNamespace(acknowledged=True, upserted_id=query["_id"] if created else None,
+                                       matched_count=0 if created else 1)
+            return SimpleNamespace(acknowledged=False)
+
+        self.collection.find_one.side_effect = lambda _query: dict(history) if history else None
+        self.collection.update_one.side_effect = reserve_but_fail_final_update
+        await tag.execute(self.cog, self.it)
+        await tag.execute(self.cog, self.it)
+        self.member.send.assert_awaited_once()
+
+    async def test_reservation_owned_by_another_run_prevents_delivery(self):
+        self.collection.update_one.side_effect = [
+            SimpleNamespace(acknowledged=True, upserted_id=None),
+            SimpleNamespace(acknowledged=True, matched_count=0),
+        ]
+        await tag.execute(self.cog, self.it)
+        self.member.send.assert_not_awaited()
+
+    async def test_definite_failure_can_be_retried_after_reserving_it(self):
+        self.collection.find_one.return_value = {"status": "failed"}
+        self.collection.update_one.side_effect = [
+            SimpleNamespace(acknowledged=True, upserted_id=None),
+            SimpleNamespace(acknowledged=True, matched_count=1),
+            SimpleNamespace(acknowledged=True, matched_count=1),
+        ]
+        await tag.execute(self.cog, self.it)
+        self.member.send.assert_awaited_once()
+        self.assertEqual(self.collection.update_one.call_args_list[1].args[0]["status"], "failed")
+
+    async def test_server_error_preserves_uncertain_delivery_for_review(self):
+        self.member.send.side_effect = discord.HTTPException(SimpleNamespace(status=500, reason="Error"), "Unavailable")
+        with self.assertLogs(tag.log, level="WARNING"):
+            await tag.execute(self.cog, self.it)
+        self.collection.update_one.assert_called_once()
+        self.assertEqual(self.collection.update_one.call_args.args[1]["$setOnInsert"]["status"], "pending")
+        self.assertIn("Pendentes: **1**", self.it.edit_original_response.call_args.kwargs["content"])
+
+    async def test_cancellation_is_reported_as_interrupted_with_pending_delivery(self):
+        self.member.send.side_effect = asyncio.CancelledError()
+        with self.assertLogs(tag.log, level="INFO") as logs:
+            with self.assertRaises(asyncio.CancelledError):
+                await tag.execute(self.cog, self.it)
+        finished = next(line for line in logs.output if "tag_reminders_finished" in line)
+        self.assertIn("interrupted=True", finished)
+        self.assertIn("Pendentes: **1**", self.it.edit_original_response.call_args.kwargs["content"])
+
+    async def test_rate_limit_stops_run_and_records_definite_failure(self):
         self.members.append(SimpleNamespace(**{**vars(self.member), "id": 43}))
         self.member.send.side_effect = discord.HTTPException(SimpleNamespace(status=429, reason="Too Many Requests"), "Rate limited")
         with self.assertLogs(tag.log, level="WARNING"):
             await tag.execute(self.cog, self.it)
         self.member.send.assert_awaited_once()
-        self.collection.update_one.assert_not_called()
+        self.assertEqual(self.collection.update_one.call_args.args[1]["$set"]["status"], "failed")
 
     async def test_concurrent_run_is_rejected(self):
         lock = asyncio.Lock()

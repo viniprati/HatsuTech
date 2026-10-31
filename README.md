@@ -33,9 +33,12 @@ recipient is checked again before delivery. The command does not grant roles.
 The command runs at most once per hour per server, prevents overlapping runs,
 and spaces delivery attempts by 1.25 seconds. Successful and closed-DM attempts
 are recorded in the existing `welcome_dm_logs` collection with type
-`tag_supporter_reminder` and are skipped on later runs. Other failures can be
-retried on a later run. Sending stops if history cannot be confirmed or Discord
-returns a rate limit or repeated failures.
+`tag_supporter_reminder` and are skipped on later runs. Each DM is reserved
+atomically before sending. If delivery or its final record is uncertain, its
+`pending` reservation is preserved for manual review and is not sent again
+automatically. Definite rejections can be retried on a later run. Sending stops
+if history cannot be confirmed or Discord returns a rate limit or repeated
+failures.
 
 The administrator receives private progress and delivery counts. Runs exceeding
 Discord's interaction lifetime may lose the private report; the final counts
