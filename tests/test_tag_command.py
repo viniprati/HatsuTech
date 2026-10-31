@@ -10,6 +10,7 @@ os.environ["MONGO_URI"] = ""
 
 from cogs.engagement.commands import tag_command as tag
 from cogs.engagement.cog import Engagement
+from utils import BOT_OWNER_ID, FULL_ACCESS_ROLE_ID
 
 
 class TagCommandTests(unittest.IsolatedAsyncioTestCase):
@@ -34,10 +35,11 @@ class TagCommandTests(unittest.IsolatedAsyncioTestCase):
             fetch_members=fetch_members, fetch_member=AsyncMock(return_value=self.member),
         )
         self.it = SimpleNamespace(
-            guild=self.guild, user=SimpleNamespace(id=1), permissions=SimpleNamespace(administrator=True),
+            guild=self.guild, user=SimpleNamespace(id=1, roles=[]), permissions=SimpleNamespace(administrator=True),
             response=SimpleNamespace(defer=AsyncMock()), followup=SimpleNamespace(send=AsyncMock()),
             edit_original_response=AsyncMock(),
         )
+        self.it.channel = SimpleNamespace(permissions_for=lambda _user: self.it.permissions)
         self.cog = SimpleNamespace(tag_reminder_locks={})
         self.collection = SimpleNamespace(
             find_one=MagicMock(return_value=None),
@@ -82,11 +84,29 @@ class TagCommandTests(unittest.IsolatedAsyncioTestCase):
                 member = SimpleNamespace(**{**vars(self.member), **change})
                 self.assertFalse(tag.needs_supporter_reminder(member))
 
-    async def test_non_admin_is_denied_even_with_full_access(self):
+    async def test_common_member_without_administrator_is_denied(self):
         self.it.permissions.administrator = False
         await tag.execute(self.cog, self.it)
         self.member.send.assert_not_awaited()
         self.collection.find_one.assert_not_called()
+
+    async def test_owner_without_administrator_can_use_command(self):
+        self.it.user.id = BOT_OWNER_ID
+        self.it.permissions.administrator = False
+        self.assertTrue(await Engagement.tag.checks[0](self.it))
+        await tag.execute(self.cog, self.it)
+        self.member.send.assert_awaited_once()
+
+    async def test_full_access_role_without_administrator_can_use_command(self):
+        self.it.user.roles = [SimpleNamespace(id=FULL_ACCESS_ROLE_ID)]
+        self.it.permissions.administrator = False
+        self.assertTrue(await Engagement.tag.checks[0](self.it))
+        await tag.execute(self.cog, self.it)
+        self.member.send.assert_awaited_once()
+
+    def test_command_visibility_does_not_require_discord_administrator(self):
+        self.assertIsNone(Engagement.tag.default_permissions)
+        self.assertTrue(Engagement.tag.guild_only)
 
     async def test_database_offline_at_start_prevents_scan(self):
         with patch.object(tag, "ensure_db_online", AsyncMock(return_value=False)):
@@ -100,7 +120,7 @@ class TagCommandTests(unittest.IsolatedAsyncioTestCase):
         self.member.send.assert_not_awaited()
         self.assertIn("servidor principal", self.it.followup.send.call_args.args[0])
 
-    async def test_registered_command_checks_administrator_at_runtime(self):
+    async def test_registered_command_rejects_common_member_at_runtime(self):
         self.it.permissions.administrator = False
         with self.assertRaises(discord.app_commands.MissingPermissions):
             await Engagement.tag.checks[0](self.it)
