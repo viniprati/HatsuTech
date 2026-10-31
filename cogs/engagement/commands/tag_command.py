@@ -10,7 +10,7 @@ import discord
 
 from config import MAIN_GUILD_ID
 from database import is_db_online, welcome_dm_logs_col
-from utils import ensure_db_online, ensure_guild_interaction
+from utils import ensure_db_online, ensure_guild_interaction, has_full_access
 from ..cog import APOIADOR_BENEFITS, APOIADOR_CHANNEL_ID, APOIADOR_ROLE_ID, member_has_server_tag
 
 
@@ -96,8 +96,11 @@ async def execute(self, it: discord.Interaction):
     if not await ensure_guild_interaction(it, "o comando /tag"):
         return
     # Keep the runtime check even when execute is called outside the slash command.
-    if not it.permissions.administrator:
-        return await it.followup.send("Somente administradores podem usar /tag.", ephemeral=True)
+    if not has_full_access(it.user) and not it.permissions.administrator:
+        return await it.followup.send(
+            "Somente administradores, o dono do bot ou membros com acesso total podem usar /tag.",
+            ephemeral=True,
+        )
     if it.guild.id != MAIN_GUILD_ID:
         return await it.followup.send("Use /tag no servidor principal do Animes Café.", ephemeral=True)
     if not await ensure_db_online(it, "o comando /tag"):

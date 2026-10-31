@@ -689,9 +689,8 @@ class Engagement(commands.Cog):
 
     @app_commands.command(name="tag", description="Envia lembretes por DM para quem usa a tag e não tem Apoiador.")
     @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
     @app_commands.checks.cooldown(1, 3600, key=lambda it: it.guild_id)
-    @app_commands.checks.has_permissions(administrator=True)
+    @check_owner_or_perm(administrator=True)
     async def tag(self, it: discord.Interaction):
         from .commands.tag_command import execute
 
