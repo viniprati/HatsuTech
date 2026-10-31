@@ -28,6 +28,7 @@ JOGAR_ROLE_ID = 1097480994065490000
 JOGAR_CHANNEL_ID = 1530739368078213220
 JOGAR_COOLDOWN_SECONDS = 60 * 60
 APOIADOR_ROLE_ID = 1512225314502086746
+APOIADOR_CHANNEL_ID = 1482468114313773271
 SUPPORTER_TAG_CHECK_INTERVAL_HOURS = 6
 SUPPORTER_TAG_REMOVAL_DELAY_SECONDS = 0.5
 APOIADOR_BENEFITS = [
@@ -210,6 +211,7 @@ HELP_DATA = {
         "color": discord.Color.red(),
         "commands": [
             ("📊", "admin_stats", "Painel administrativo de ranks e sistema.", "Admin"),
+            ("☕", "tag", "Avisa por DM quem usa a tag e ainda não resgatou Apoiador.", "Admin"),
             ("<:Vip_Requiem:1512192545172492449>", "admin_vip", "Lista e audita VIPs pessoais.", "Admin"),
             ("✨", "admin_emoji", "Força a troca do emoji de uma guilda.", "Admin"),
             ("<:sword:1512194684045496380>", "admin_guildas", "Painel administrativo de guildas.", "Admin"),
@@ -521,6 +523,7 @@ class Engagement(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.badges_cache = {}
+        self.tag_reminder_locks = {}
         self.load_badges_from_db()
         if not self.supporter_tag_check_loop.is_running():
             self.supporter_tag_check_loop.start()
@@ -683,6 +686,16 @@ class Engagement(commands.Cog):
         from .commands.remover_badge_command import execute
 
         await execute(self, it, cargo)
+
+    @app_commands.command(name="tag", description="Envia lembretes por DM para quem usa a tag e não tem Apoiador.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.cooldown(1, 3600, key=lambda it: it.guild_id)
+    @app_commands.checks.has_permissions(administrator=True)
+    async def tag(self, it: discord.Interaction):
+        from .commands.tag_command import execute
+
+        await execute(self, it)
 
     @app_commands.command(name="apoiador_painel", description="Envia o painel para resgatar o cargo Apoiador.")
     @check_owner_or_perm(administrator=True)
