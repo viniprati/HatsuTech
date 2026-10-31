@@ -20,6 +20,29 @@ PROGRESS_INTERVAL_SECONDS = 30
 MAX_CONSECUTIVE_FAILURES = 5
 
 
+def _reserve_reminder(record_id: str, guild_id: int, user_id: int, run_id: str) -> bool | None:
+    """Reserve once before sending; only definite failed deliveries can be retried."""
+    document = {
+        "type": "tag_supporter_reminder", "guild_id": str(guild_id),
+        "user_id": str(user_id), "status": "pending", "run_id": run_id,
+        "created_at": datetime.now(timezone.utc),
+    }
+    result = welcome_dm_logs_col.update_one(
+        {"_id": record_id}, {"$setOnInsert": document}, upsert=True,
+    )
+    if not getattr(result, "acknowledged", False):
+        return None
+    if result.upserted_id is not None:
+        return True
+    # Matching by status ensures only one concurrent run can claim a retry.
+    result = welcome_dm_logs_col.update_one(
+        {"_id": record_id, "status": "failed"}, {"$set": document},
+    )
+    if not getattr(result, "acknowledged", False):
+        return None
+    return result.matched_count == 1
+
+
 def needs_supporter_reminder(member: discord.Member) -> bool:
     return (
         not member.bot
@@ -89,7 +112,7 @@ async def execute(self, it: discord.Interaction):
     async with lock:
         run_id = str(uuid4())
         started = time.monotonic()
-        counts = {"analisados": 0, "elegiveis": 0, "enviados": 0, "bloqueados": 0,
+        counts = {"analisados": 0, "elegiveis": 0, "enviados": 0, "bloqueados": 0, "pendentes": 0,
                   "ja_avisados": 0, "ignorados": 0, "falhas": 0}
         reason = None
         log.info("tag_reminders_started run_id=%s guild_id=%s actor_id=%s", run_id, it.guild.id, it.user.id)
@@ -123,6 +146,9 @@ async def execute(self, it: discord.Interaction):
                 if previous and previous.get("status") in {"sent", "dm_closed"}:
                     counts["ja_avisados"] += 1
                     continue
+                if previous and previous.get("status") == "pending":
+                    counts["pendentes"] += 1
+                    continue
 
                 # A failure to fetch a member is not evidence their DMs are closed.
                 try:
@@ -133,6 +159,16 @@ async def execute(self, it: discord.Interaction):
                 if not needs_supporter_reminder(member):
                     counts["ignorados"] += 1
                     continue
+                reserved = await asyncio.to_thread(
+                    _reserve_reminder, record_id, it.guild.id, user_id, run_id,
+                )
+                if reserved is None:
+                    reason = "Não foi possível registrar a reserva da DM; nenhum novo envio será feito."
+                    break
+                if not reserved:
+                    counts["ignorados"] += 1
+                    continue
+                counts["pendentes"] += 1
                 status = None
                 try:
                     await member.send(embed=embed, view=view, allowed_mentions=discord.AllowedMentions.none())
@@ -145,30 +181,36 @@ async def execute(self, it: discord.Interaction):
                     failures = 0
                 except discord.NotFound:
                     counts["ignorados"] += 1
+                    status = "failed"
                 except discord.HTTPException as exc:
                     counts["falhas"] += 1
                     failures += 1
                     log.warning("tag_dm_failed run_id=%s user_id=%s status=%s code=%s", run_id, user_id, exc.status, exc.code)
+                    if 400 <= exc.status < 500:
+                        status = "failed"
+                    # A server error may follow delivery; its reservation stays pending.
                     if exc.status == 429 or failures >= MAX_CONSECUTIVE_FAILURES:
                         reason = "Envio interrompido por limite do Discord ou falhas consecutivas."
-                        break
 
                 if status:
                     result = await asyncio.to_thread(
                         welcome_dm_logs_col.update_one,
-                        {"_id": record_id},
-                        {"$set": {"type": "tag_supporter_reminder", "guild_id": str(it.guild.id),
-                                  "user_id": str(user_id), "status": status, "run_id": run_id,
-                                  "created_at": datetime.now(timezone.utc)}},
-                        upsert=True,
+                        {"_id": record_id, "status": "pending", "run_id": run_id},
+                        {"$set": {"status": status, "updated_at": datetime.now(timezone.utc)}},
                     )
-                    if not getattr(result, "acknowledged", False):
+                    if not getattr(result, "acknowledged", False) or result.matched_count != 1:
                         reason = "Não foi possível registrar o resultado da DM; envio interrompido."
                         break
+                    counts["pendentes"] -= 1
+                if reason:
+                    break
                 if time.monotonic() - last_progress >= PROGRESS_INTERVAL_SECONDS:
                     await _report(it, f"Envio em andamento: {counts['enviados']} enviados, {counts['bloqueados']} bloqueados.", run_id)
                     last_progress = time.monotonic()
                 await asyncio.sleep(DM_DELAY_SECONDS)
+        except asyncio.CancelledError:
+            reason = "Execução cancelada; reservas pendentes foram preservadas para revisão."
+            raise
         except (discord.Forbidden, discord.NotFound, discord.HTTPException) as exc:
             reason = "Não consegui consultar os membros ou o canal de resgate. Confira as permissões do bot."
             log.warning("tag_scan_failed run_id=%s status=%s code=%s", run_id, exc.status, exc.code)
