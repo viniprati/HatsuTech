@@ -23,6 +23,27 @@ main areas are:
 - update broadcasts and user notification preferences;
 - Clash Royale account and clan utilities.
 
+## Supporter Tag Reminders
+
+Administrators can run `/tag` in the main server to scan all members and send
+the HatsuTech introduction and Apoiador claim link to people displaying the
+server tag without the Apoiador role. Bots and hidden tags are excluded; each
+recipient is checked again before delivery. The command does not grant roles.
+
+The command runs at most once per hour per server, prevents overlapping runs,
+and spaces delivery attempts by 1.25 seconds. Successful and closed-DM attempts
+are recorded in the existing `welcome_dm_logs` collection with type
+`tag_supporter_reminder` and are skipped on later runs. Other failures can be
+retried on a later run. Sending stops if history cannot be confirmed or Discord
+returns a rate limit or repeated failures.
+
+The administrator receives private progress and delivery counts. Runs exceeding
+Discord's interaction lifetime may lose the private report; the final counts
+remain in the `tag_reminders_finished` log, correlated by `run_id`.
+MongoDB and Discord's Server Members intent must be available. The existing
+Apoiador role and claim panel channel must exist and be accessible to members.
+After deploying, use `!sync` in the main server to register `/tag`.
+
 ## Repository Access
 
 This repository is public for reading, review and transparency. Public
