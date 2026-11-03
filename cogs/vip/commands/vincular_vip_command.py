@@ -28,6 +28,9 @@ async def execute(self, it, usuario: discord.Member, cargo: discord.Role):
                     "missing_member": False,
                     "missing_role": False,
                     "last_seen_at": datetime.now(timezone.utc),
+                    "last_activity_at": datetime.now(timezone.utc),
+                    "inactivity_observed_at": datetime.now(timezone.utc),
+                    "inactivity_policy": VIP_INACTIVITY_POLICY,
                 },
                 "$unset": {
                     "cleanup_reason": "",
@@ -42,6 +45,9 @@ async def execute(self, it, usuario: discord.Member, cargo: discord.Role):
             guild_id=it.guild.id,
             upsert=True
         )
+        current_doc = await self._get_vip_doc(it.guild, usuario.id)
+        if current_doc:
+            self._common_vip_owners[(it.guild.id, usuario.id)] = current_doc["_id"]
     await it.response.send_message(f"✅ Vinculado {cargo.mention} a {usuario.mention}", ephemeral=True)
     await send_admin_audit_dm(
         self.bot,
