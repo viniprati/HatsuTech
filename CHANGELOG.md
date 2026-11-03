@@ -3,6 +3,31 @@
 Todas as mudancas relevantes do HatsuTech passam a ser registradas neste
 arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- relatório administrativo por DM para PRATI e Renk em cada exclusão de cargo
+  VIP pessoal ou destaque realizada pelo bot, incluindo saída/banimento,
+  inatividade, perda de elegibilidade e exclusão pelo painel do dono;
+- script local `scripts/audit_vip_message_history.py` para analisar mensagens já
+  existentes dos últimos dez dias no lobby por padrão, com opções para threads
+  ou servidor inteiro, exportando JSON local com evidências e cobertura parcial
+  quando houver falhas;
+- script local `scripts/audit_vip_activity.py` para consultar a última atividade
+  registrada dos donos de cargos, classificar históricos insuficientes e exportar
+  JSON automaticamente em pasta ignorada pelo Git e CSV opcional, com leitura do
+  MongoDB ou de backup JSON sem iniciar o bot.
+
+### Changed
+
+- exclusão de cargos VIP pessoais e destaques Monarch após dez dias sem atividade
+  observada do dono, incluindo cargos personalizados vinculados manualmente;
+- mensagens em qualquer canal, reações, comandos, botões, formulários e atividade
+  em voz fora do AFK renovam a janela de inatividade;
+- exclusão dos cargos pessoais quando o dono sai ou é banido, com novas tentativas
+  para falhas e processamento de registros antigos marcados para revisão.
+
 ## [1.1.0] - 2026-10-08
 
 ### Added

@@ -6,8 +6,10 @@ import time
 import re
 import asyncio
 import logging
+import json
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 
 from admin_audit import send_admin_audit_dm
@@ -233,11 +235,12 @@ RESTORE_MEMBER_DELAY_SECONDS = 0.25
 RECONCILE_ABSENT_VIP_LIMIT_PER_RUN = 5
 RECONCILE_ABSENT_VIP_DELAY_SECONDS = 2.0
 MANUAL_VIP_MEMBER_REMOVAL_TTL_SECONDS = 30
-COMMON_VIP_INACTIVITY_DAYS = 21
-MONARCH_HIGHLIGHT_INACTIVITY_DAYS = 28
+COMMON_VIP_INACTIVITY_DAYS = 10
+MONARCH_HIGHLIGHT_INACTIVITY_DAYS = 10
+VIP_INACTIVITY_POLICY = "observed_activity_10_days_v1"
 COMMON_VIP_ACTIVITY_WRITE_INTERVAL_SECONDS = 300
 COMMON_VIP_DELETE_RETRY_SECONDS = 3600
-COMMON_VIP_SOURCES = {"command:/vip", "command:/vip:common"}
+COMMON_VIP_SOURCES = {"command:/vip", "command:/vip:common", "command:/vincular_vip"}
 
 
 
@@ -436,15 +439,18 @@ class VipMainView(ui.View):
             return
         if not await ensure_db_online(it, "a exclusão do VIP"):
             return
+        await it.response.defer(ephemeral=True)
         async with self.cog._get_vip_lock(it.user.id, it.guild.id):
             try:
-                await self.role.delete(reason="VIP pessoal excluído pelo dono")
+                await self.cog._delete_vip_role_with_audit(
+                    it.guild, it.user.id, self.role, "VIP pessoal excluído pelo dono", "vip_panel:delete_role", actor=it.user
+                )
             except discord.NotFound:
                 pass
             except (discord.Forbidden, discord.HTTPException) as exc:
                 log.warning("vip_owner_delete_failed guild_id=%s user_id=%s role_id=%s error=%s",
                             it.guild.id, it.user.id, self.role.id, exc)
-                return await it.response.send_message(
+                return await it.followup.send(
                     "Não consegui excluir o cargo VIP. Verifique minhas permissões e a hierarquia.", ephemeral=True,
                 )
             await self.cog._update_vip_role_with_snapshot(
@@ -467,10 +473,10 @@ class VipMainView(ui.View):
             if not updated or updated.get("status") != "inactive":
                 log.error("vip_owner_delete_db_failed guild_id=%s user_id=%s role_id=%s",
                           it.guild.id, it.user.id, self.role.id)
-                return await it.response.send_message(
+                return await it.followup.send(
                     "O cargo foi excluído, mas não consegui atualizar o registro. Avise a administração.", ephemeral=True,
                 )
-        await it.response.send_message("VIP deletado.", ephemeral=True); self.stop()
+        await it.followup.send("VIP deletado.", ephemeral=True); self.stop()
 
 
 class VipHighlightView(ui.View):
@@ -519,15 +525,19 @@ class VipHighlightView(ui.View):
             return
         if not await ensure_db_online(it, "a exclusão do destaque"):
             return
+        await it.response.defer(ephemeral=True)
         async with self.cog._get_vip_lock(it.user.id, it.guild.id):
             try:
-                await self.role.delete(reason="Destaque VIP excluído pelo dono")
+                await self.cog._delete_vip_role_with_audit(
+                    it.guild, it.user.id, self.role, "Destaque VIP excluído pelo dono", "vip_panel:delete_highlight",
+                    actor=it.user, kind="destaque",
+                )
             except discord.NotFound:
                 pass
             except (discord.Forbidden, discord.HTTPException) as exc:
                 log.warning("vip_highlight_delete_failed guild_id=%s user_id=%s role_id=%s error=%s",
                             it.guild.id, it.user.id, self.role.id, exc)
-                return await it.response.send_message(
+                return await it.followup.send(
                     "Não consegui excluir o destaque. Verifique minhas permissões e a hierarquia.", ephemeral=True,
                 )
             await self.cog._update_vip_role_with_snapshot(
@@ -550,10 +560,10 @@ class VipHighlightView(ui.View):
             if not updated or updated.get("highlight_active") is not False:
                 log.error("vip_highlight_delete_db_failed guild_id=%s user_id=%s role_id=%s",
                           it.guild.id, it.user.id, self.role.id)
-                return await it.response.send_message(
+                return await it.followup.send(
                     "O destaque foi excluído, mas não consegui atualizar o registro. Avise a administração.", ephemeral=True,
                 )
-        await it.response.send_message("Destaque removido.", ephemeral=True); self.stop()
+        await it.followup.send("Destaque removido.", ephemeral=True); self.stop()
 
 
 class VipAdminView(ui.View):
@@ -1249,6 +1259,32 @@ class VipSystem(commands.Cog):
             "ignored_members": ignored,
         }
 
+    async def _delete_vip_role_with_audit(
+        self, guild: discord.Guild, user_id: int, role: discord.Role, reason: str, source: str,
+        *, actor=None, kind: str = "personalizado",
+    ):
+        """Report only deletions confirmed by Discord, independently of later DB writes."""
+        if role.id == guild.id or not self._is_personal_vip_role(role):
+            raise ValueError("Cargo geral ou gerenciado não pode ser excluído como VIP pessoal.")
+        await role.delete(reason=reason)
+        try:
+            await send_admin_audit_dm(
+                self.bot, category="vip", action="Cargo VIP personalizado excluído" if kind == "personalizado" else "Destaque VIP excluído",
+                guild=guild, actor=actor or getattr(self.bot, "user", None), target_id=user_id,
+                reason=reason,
+                details={
+                    "Cargo excluído": f"{role.name} (`{role.id}`)",
+                    "Tipo": kind,
+                    "Origem": source,
+                    "Confirmação": "Exclusão confirmada pela API do Discord. O fluxo responsável atualiza o vínculo no banco.",
+                },
+                source=f"vip_role_delete:{source}",
+            )
+        except Exception:
+            # Reporting must never turn a completed Discord deletion into a failed operation.
+            log.exception("vip_role_delete_audit_failed guild_id=%s user_id=%s role_id=%s source=%s",
+                          guild.id, user_id, role.id, source)
+
     async def _deactivate_personal_vip_role(
         self,
         member: discord.Member,
@@ -1286,7 +1322,9 @@ class VipSystem(commands.Cog):
         )
         if personal_role:
             try:
-                await personal_role.delete(reason=f"VIP pessoal desativado: {reason}")
+                await self._delete_vip_role_with_audit(
+                    member.guild, member.id, personal_role, f"VIP pessoal desativado: {reason}", source
+                )
             except (discord.Forbidden, discord.HTTPException) as e:
                 log.warning("Nao foi possivel remover cargo VIP desativado user_id=%s role_id=%s: %s", member.id, personal_role.id, e)
         elif role:
@@ -1355,7 +1393,9 @@ class VipSystem(commands.Cog):
                 return False
         if role:
             try:
-                await role.delete(reason=f"Destaque Monarch desativado: {reason}")
+                await self._delete_vip_role_with_audit(
+                    guild, member.id, role, f"Destaque Monarch desativado: {reason}", source, kind="destaque"
+                )
             except discord.NotFound:
                 role = None
             except (discord.Forbidden, discord.HTTPException) as exc:
@@ -1440,14 +1480,6 @@ class VipSystem(commands.Cog):
 
         return self._legacy_doc_belongs_to_guild(guild, data)
 
-    def _already_reviewing_absent_member(self, data: dict) -> bool:
-        return bool(
-            data.get("status") == "needs_review"
-            and data.get("review_required")
-            and data.get("missing_member")
-            and data.get("cleanup_reason") == "member_not_found"
-        )
-
     async def _mark_vip_needs_review(
         self,
         user_id: int,
@@ -1516,46 +1548,126 @@ class VipSystem(commands.Cog):
             )
         return True
 
+    async def _remove_departed_owner_role(
+        self, guild: discord.Guild, user_id: int, data: dict, field: str, source: str, cleanup_id: str
+    ) -> bool:
+        role_id = _to_int_or_none(data.get(field))
+
+        def report(level, event, **details):
+            log.log(level, json.dumps({
+                "event": event, "cleanup_id": cleanup_id, "guild_id": guild.id,
+                "user_id": user_id, "field": field, "role_id": role_id, "source": source, **details,
+            }))
+
+        failure = None
+        role = None
+        if role_id is None:
+            failure = "invalid_role_id"
+        else:
+            role = guild.get_role(role_id)
+            if role is None:
+                try:
+                    role = next((r for r in await guild.fetch_roles() if r.id == role_id), None)
+                except (discord.Forbidden, discord.HTTPException) as exc:
+                    failure = type(exc).__name__
+            if role and (role.id == guild.id or not self._is_personal_vip_role(role) or not bot_can_manage_role(guild, role)):
+                failure = "unsafe_role_or_hierarchy"
+        if failure is None:
+            conflicting = await asyncio.to_thread(
+                vip_col.find_one,
+                {"_id": {"$ne": data["_id"]}, "$or": [
+                    {"role_id": {"$in": [str(role_id), role_id]}},
+                    {"highlight_id": {"$in": [str(role_id), role_id]}},
+                ]},
+            )
+            if not is_db_online():
+                return False
+            other_field = "highlight_id" if field == "role_id" else "role_id"
+            if conflicting or role_id == _to_int_or_none(data.get(other_field)):
+                failure = "shared_role"
+        if failure is None and role:
+            if guild.get_member(user_id):
+                return False
+            try:
+                await self._delete_vip_role_with_audit(
+                    guild, user_id, role, "Dono do cargo VIP saiu ou foi banido do servidor", source,
+                    kind="destaque" if field == "highlight_id" else "personalizado",
+                )
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                failure = type(exc).__name__
+        if failure:
+            await self._update_vip_role_with_snapshot(
+                user_id,
+                {"$set": {"status": "needs_review", "review_required": True, "missing_member": True,
+                          "cleanup_reason": "owner_departure_cleanup_failed", "cleanup_source": source,
+                          "cleanup_checked_at": datetime.now(timezone.utc),
+                          "departure_retry_after": datetime.now(timezone.utc) + timedelta(seconds=COMMON_VIP_DELETE_RETRY_SECONDS)}},
+                f"{source}:departure_delete_failed", guild_id=guild.id,
+            )
+            report(logging.WARNING, "vip_departure_role_delete_failed", reason=failure)
+            return False
+
+        now = datetime.now(timezone.utc)
+        sets = {"last_role_id": str(role_id)} if field == "role_id" else {
+            "last_highlight_id": str(role_id), "highlight_active": False,
+            "highlight_review_required": False, "highlight_disabled_reason": "owner_left_guild",
+            "highlight_disabled_at": now,
+        }
+        await self._update_vip_role_with_snapshot(
+            user_id, {"$set": sets, "$unset": {field: ""}},
+            f"{source}:departure_delete:{field}", guild_id=guild.id,
+        )
+        saved = await asyncio.to_thread(vip_col.find_one, {"_id": data["_id"]})
+        if not is_db_online() or not saved or saved.get(field) is not None:
+            report(logging.ERROR, "vip_departure_state_not_saved")
+            return False
+        cache = self._common_vip_owners if field == "role_id" else self._monarch_highlight_owners
+        cache.pop((guild.id, user_id), None)
+        report(logging.INFO, "vip_departure_role_deleted")
+        return True
+
     async def _cleanup_absent_vip_owner(self, guild: discord.Guild, user_id: int, source: str) -> bool:
-        if await self._member_still_in_guild(guild, user_id):
+        if not is_db_online() or await self._member_still_in_guild(guild, user_id):
             return False
 
         uid = str(user_id)
         gid = str(guild.id)
         data = await self._get_vip_doc(guild, uid)
-        if not data:
-            await asyncio.to_thread(temp_col.delete_many, {"user_id": uid, "guild_id": gid})
-            return True
-        if not self._vip_doc_belongs_to_guild(guild, data):
-            await asyncio.to_thread(temp_col.delete_many, {"user_id": uid, "guild_id": gid})
-            return True
-
-        missing_role = False
-        for key in ("role_id", "highlight_id"):
-            rid = data.get(key)
-            if rid is None:
-                continue
-            try:
-                if guild.get_role(int(rid)) is None:
-                    missing_role = True
-            except (TypeError, ValueError):
-                missing_role = True
-
-        await self._mark_vip_needs_review(
-            user_id,
-            "member_not_found",
-            source,
-            guild,
-            missing_member=True,
-            missing_role=missing_role,
-            old_doc=data,
-        )
+        if not is_db_online() or (data and not self._vip_doc_belongs_to_guild(guild, data)):
+            return False
+        if data:
+            cleanup_id = uuid4().hex
+            complete = True
+            for field in ("role_id", "highlight_id"):
+                if data.get(field) is not None:
+                    removed = await self._remove_departed_owner_role(guild, user_id, data, field, source, cleanup_id)
+                    complete = complete and removed
+            if not complete:
+                return False
+            await self._update_vip_role_with_snapshot(
+                user_id,
+                {"$set": {"status": "inactive", "entitlement_active": False, "review_required": False,
+                          "missing_member": True, "disabled_reason": "owner_left_guild",
+                          "disabled_at": datetime.now(timezone.utc)},
+                 "$unset": {"cleanup_reason": "", "cleanup_source": "", "cleanup_checked_at": "", "departure_retry_after": ""}},
+                f"{source}:departure_cleanup", guild_id=guild.id,
+            )
+            saved = await asyncio.to_thread(vip_col.find_one, {"_id": data["_id"]})
+            if not is_db_online() or not saved or saved.get("status") != "inactive":
+                return False
         await asyncio.to_thread(temp_col.delete_many, {"user_id": uid, "guild_id": gid})
         return True
+
     @commands.Cog.listener()
-    async def on_member_remove(self, member):
-        async with self._get_vip_lock(member.id, member.guild.id):
-            await self._cleanup_absent_vip_owner(member.guild, member.id, "on_member_remove")
+    async def on_raw_member_remove(self, payload: discord.RawMemberRemoveEvent):
+        # The raw event also covers bans and members missing from the local cache.
+        guild = self.bot.get_guild(payload.guild_id)
+        if guild is None:
+            return
+        async with self._get_vip_lock(payload.user.id, guild.id):
+            await self._cleanup_absent_vip_owner(guild, payload.user.id, "on_raw_member_remove")
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
@@ -1909,15 +2021,38 @@ class VipSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        if not message.guild or message.author.bot or not is_db_online():
+        await self._record_member_activity(message.guild, message.author)
+
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        if interaction.type in {
+            discord.InteractionType.application_command,
+            discord.InteractionType.component,
+            discord.InteractionType.modal_submit,
+        }:
+            await self._record_member_activity(interaction.guild, interaction.user)
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        if payload.guild_id is None or not is_db_online():
             return
-        await self._hydrate_inactivity_owner_cache(message.guild, message.author.id)
-        key = (message.guild.id, message.author.id)
+        guild = self.bot.get_guild(payload.guild_id)
+        if guild is None:
+            return
+        member = payload.member or await self._get_guild_member_safe(guild, payload.user_id)
+        if member is not None:
+            await self._record_member_activity(guild, member)
+
+    async def _record_member_activity(self, guild: discord.Guild | None, member):
+        if guild is None or member.bot or not is_db_online():
+            return
+        await self._hydrate_inactivity_owner_cache(guild, member.id)
+        key = (guild.id, member.id)
         document_id = self._common_vip_owners.get(key)
         highlight_document_id = self._monarch_highlight_owners.get(key)
         if document_id is None and highlight_document_id is None:
             return
-        async with self._get_vip_lock(message.author.id, message.guild.id):
+        async with self._get_vip_lock(member.id, guild.id):
             now = datetime.now(timezone.utc)
             if document_id is not None:
                 last_write = self._common_vip_activity_written.get(key)
@@ -1942,7 +2077,8 @@ class VipSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
-        if member.bot or not after.channel or after.channel == member.guild.afk_channel or not is_db_online():
+        channel = after.channel or before.channel
+        if member.bot or not channel or channel == member.guild.afk_channel or not is_db_online():
             return
         await self._hydrate_inactivity_owner_cache(member.guild, member.id)
         key = (member.guild.id, member.id)
@@ -1955,11 +2091,11 @@ class VipSystem(commands.Cog):
             if document_id is not None:
                 doc = await asyncio.to_thread(vip_col.find_one, {"_id": document_id})
                 if doc and doc.get("role_source") in COMMON_VIP_SOURCES and doc.get("role_id") and doc.get("status") != "inactive":
-                    await self._record_common_vip_voice_activity(member.guild, member, doc, now, after.channel)
+                    await self._record_common_vip_voice_activity(member.guild, member, doc, now, channel)
             if highlight_document_id is not None:
                 doc = await asyncio.to_thread(vip_col.find_one, {"_id": highlight_document_id})
                 if doc and doc.get("highlight_id"):
-                    await self._record_monarch_highlight_voice_activity(member.guild, member, doc, now, after.channel)
+                    await self._record_monarch_highlight_voice_activity(member.guild, member, doc, now, channel)
 
     async def _hydrate_inactivity_owner_cache(self, guild: discord.Guild, user_id: int):
         key = (guild.id, user_id)
@@ -2038,12 +2174,20 @@ class VipSystem(commands.Cog):
                     await self._record_common_vip_voice_activity(guild, member, doc, datetime.now(timezone.utc))
                 return
             role = guild.get_role(role_id)
-            if role and (not self._is_personal_vip_role(role) or role.id == _to_int_or_none(doc.get("highlight_id")) or not bot_can_manage_role(guild, role)):
+            if role is None:
+                try:
+                    role = next((r for r in await guild.fetch_roles() if r.id == role_id), None)
+                except (discord.Forbidden, discord.HTTPException):
+                    return
+            if role and (role.id == guild.id or not self._is_personal_vip_role(role) or role.id == _to_int_or_none(doc.get("highlight_id")) or not bot_can_manage_role(guild, role)):
                 log.warning("vip_inactivity_unsafe_role guild_id=%s user_id=%s role_id=%s", guild.id, user_id, role_id)
                 return
             conflicting = await asyncio.to_thread(
                 vip_col.find_one,
-                {"_id": {"$ne": document_id}, "role_id": {"$in": [str(role_id), role_id]}},
+                {"_id": {"$ne": document_id}, "$or": [
+                    {"role_id": {"$in": [str(role_id), role_id]}},
+                    {"highlight_id": {"$in": [str(role_id), role_id]}},
+                ]},
             )
             if not is_db_online():
                 return
@@ -2060,7 +2204,10 @@ class VipSystem(commands.Cog):
                     return
             if role:
                 try:
-                    await role.delete(reason=f"VIP comum sem atividade do dono por {COMMON_VIP_INACTIVITY_DAYS} dias")
+                    await self._delete_vip_role_with_audit(
+                        guild, user_id, role, f"VIP pessoal sem atividade do dono por {COMMON_VIP_INACTIVITY_DAYS} dias",
+                        "inactivity:delete_common_role",
+                    )
                 except discord.NotFound:
                     role = None
                 except (discord.Forbidden, discord.HTTPException) as exc:
@@ -2078,7 +2225,7 @@ class VipSystem(commands.Cog):
             await self._update_vip_role_with_snapshot(
                 user_id,
                 {"$set": {"status": "inactive", "entitlement_active": False, "review_required": False,
-                          "last_role_id": str(role_id), "disabled_reason": "owner_inactive_21_days",
+                          "last_role_id": str(role_id), "disabled_reason": f"owner_inactive_{COMMON_VIP_INACTIVITY_DAYS}_days",
                           "disabled_at": now, "inactivity_deleted_at": now},
                  "$unset": {"role_id": "", "inactivity_retry_after": "", "cleanup_reason": "", "cleanup_checked_at": ""}},
                 "inactivity:delete_common_role", guild_id=guild.id,
@@ -2091,7 +2238,7 @@ class VipSystem(commands.Cog):
             log.info("vip_inactivity_role_deleted guild_id=%s user_id=%s role_id=%s", guild.id, user_id, role_id)
             try:
                 await self.enviar_log(
-                    guild, "VIP comum excluído por inatividade",
+                    guild, "VIP pessoal excluído por inatividade",
                     [("Dono", member.mention if member else f"<@{user_id}>"), ("Cargo excluído", f"{role.name if role else 'Cargo ausente'} (`{role_id}`)"),
                      ("Última atividade registrada", f"<t:{int(activity_at.timestamp())}:F>")],
                     discord.Color.orange(),
@@ -2127,12 +2274,15 @@ class VipSystem(commands.Cog):
                 observed_at = doc.get("inactivity_observed_at")
                 if isinstance(observed_at, datetime) and observed_at.tzinfo is None:
                     observed_at = observed_at.replace(tzinfo=timezone.utc)
-                if not isinstance(activity_at, datetime) or not isinstance(observed_at, datetime) or observed_at < now - timedelta(minutes=30):
+                if (doc.get("inactivity_policy") != VIP_INACTIVITY_POLICY
+                        or not isinstance(activity_at, datetime) or not isinstance(observed_at, datetime)
+                        or observed_at < now - timedelta(minutes=30)):
                     # Historical activity and activity during bot/database outages are unknown.
                     await asyncio.to_thread(
                         vip_col.update_one,
                         {"_id": doc["_id"], "role_id": doc["role_id"]},
-                        {"$set": {"last_activity_at": now, "inactivity_observed_at": now}},
+                        {"$set": {"last_activity_at": now, "inactivity_observed_at": now,
+                                  "inactivity_policy": VIP_INACTIVITY_POLICY}},
                     )
                     continue
                 await asyncio.to_thread(
@@ -2181,7 +2331,9 @@ class VipSystem(commands.Cog):
                 except discord.NotFound:
                     if activity_at <= cutoff:
                         absent_owner = SimpleNamespace(id=user_id, guild=guild, mention=f"<@{user_id}>")
-                        await self._remove_monarch_highlight(absent_owner, doc, "owner_absent_28_days", "highlight_inactivity")
+                        await self._remove_monarch_highlight(
+                            absent_owner, doc, f"owner_absent_{MONARCH_HIGHLIGHT_INACTIVITY_DAYS}_days", "highlight_inactivity"
+                        )
                     return
                 except (discord.Forbidden, discord.HTTPException):
                     return
@@ -2203,7 +2355,9 @@ class VipSystem(commands.Cog):
                         "highlight_inactivity:activity_resumed", guild_id=guild.id,
                     )
                 return
-            await self._remove_monarch_highlight(member, doc, "owner_inactive_28_days", "highlight_inactivity")
+            await self._remove_monarch_highlight(
+                member, doc, f"owner_inactive_{MONARCH_HIGHLIGHT_INACTIVITY_DAYS}_days", "highlight_inactivity"
+            )
 
     @tasks.loop(minutes=10)
     async def check_inactive_monarch_highlights(self):
@@ -2233,11 +2387,14 @@ class VipSystem(commands.Cog):
                 observed_at = doc.get("highlight_inactivity_observed_at")
                 if isinstance(observed_at, datetime) and observed_at.tzinfo is None:
                     observed_at = observed_at.replace(tzinfo=timezone.utc)
-                if not isinstance(activity_at, datetime) or not isinstance(observed_at, datetime) or observed_at < now - timedelta(minutes=30):
+                if (doc.get("highlight_inactivity_policy") != VIP_INACTIVITY_POLICY
+                        or not isinstance(activity_at, datetime) or not isinstance(observed_at, datetime)
+                        or observed_at < now - timedelta(minutes=30)):
                     await asyncio.to_thread(
                         vip_col.update_one,
                         {"_id": doc["_id"], "highlight_id": doc["highlight_id"]},
-                        {"$set": {"highlight_last_activity_at": now, "highlight_inactivity_observed_at": now}},
+                        {"$set": {"highlight_last_activity_at": now, "highlight_inactivity_observed_at": now,
+                                  "highlight_inactivity_policy": VIP_INACTIVITY_POLICY}},
                     )
                     continue
                 await asyncio.to_thread(
@@ -2273,13 +2430,20 @@ class VipSystem(commands.Cog):
             return
 
         checked_absent = 0
+        now = datetime.now(timezone.utc)
         for guild in self.bot.guilds:
             member_ids = {m.id for m in guild.members}
             for doc in records:
-                if doc.get("status") == "inactive" or self._already_reviewing_absent_member(doc):
+                if doc.get("status") == "inactive" and not doc.get("role_id") and not doc.get("highlight_id"):
                     continue
                 if not self._vip_doc_belongs_to_guild(guild, doc):
                     continue
+                retry_after = doc.get("departure_retry_after")
+                if isinstance(retry_after, datetime):
+                    if retry_after.tzinfo is None:
+                        retry_after = retry_after.replace(tzinfo=timezone.utc)
+                    if retry_after > now:
+                        continue
                 uid_raw = vip_document_user_id(doc)
                 try:
                     uid = int(uid_raw)
