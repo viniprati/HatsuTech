@@ -28,6 +28,20 @@ _reconnect_lock = threading.Lock()
 _index_lock = threading.Lock()
 _index_initialization_started = False
 _indexes_initialized = False
+_failure_generation = 0
+_failure_generation_lock = threading.Lock()
+
+
+def _note_db_failure():
+    global _failure_generation
+    with _failure_generation_lock:
+        _failure_generation += 1
+
+
+def get_db_failure_generation() -> int:
+    """Monotonic failure marker: reconnecting must not erase a request's failure."""
+    with _failure_generation_lock:
+        return _failure_generation
 
 
 class _NullCursor:
@@ -148,6 +162,8 @@ def _default_for_method(method_name: str):
 
 def _set_online_status(is_online: bool, reason: str | None = None):
     global _db_online, _last_offline_reason
+    if not is_online:
+        _note_db_failure()
     if _db_online == is_online:
         if not is_online and reason and reason != _last_offline_reason:
             _last_offline_reason = reason
@@ -246,6 +262,7 @@ class ResilientCollection:
         def safe_method(*args, **kwargs):
             col = self._get_collection()
             if col is None:
+                _note_db_failure()
                 return _default_for_method(method_name)
             try:
                 method = getattr(col, method_name)
@@ -290,6 +307,7 @@ eco_logs_col = ResilientCollection("eco_logs")
 eco_admin_logs_col = ResilientCollection("eco_admin_logs")
 eco_vip_transactions_col = ResilientCollection("eco_vip_transactions")
 admin_audit_logs_col = ResilientCollection("admin_audit_logs")
+profiles_col = ResilientCollection("member_profiles")
 
 
 def _initialize_indexes():
@@ -298,6 +316,9 @@ def _initialize_indexes():
         if db is None and not _ensure_connection():
             return
         specs = {
+            "member_profiles": [
+                ([("guild_id", 1), ("user_id", 1)], "member_profiles_guild_user"),
+            ],
             "vip_roles": [
                 ([("guild_id", 1)], "vip_roles_guild_id"),
                 ([("user_id", 1)], "vip_roles_user_id"),
