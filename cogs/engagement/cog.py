@@ -20,7 +20,9 @@ except ImportError:
     REVIVER_ROLE_ID = 0
     REVIVER_PERM_ROLE_ID = 1413646810316279990
 
-from utils import check_owner_or_perm, ensure_db_online, ensure_guild_interaction, has_full_access
+from utils import check_owner_or_perm, ensure_db_online, ensure_guild_interaction, has_full_access, is_allowed_guild
+from .profile_service import ProfileService
+from config import CHAT_COUNT_CHANNEL_ID
 
 FUSO_BRT = timezone(timedelta(hours=-3))
 REVIVER_COOLDOWN_MINUTES = 30
@@ -66,6 +68,7 @@ HELP_DATA = {
         "commands": [
             ("❔", "ajuda", "Abre esta central interativa de comandos.", "Público"),
             ("👤", "userinfo", "Mostra perfil, conquistas, cargos e dados do membro.", "Público"),
+            ("☕", "perfil", "Seu cartão do Café, conquistas e personalização. Use publico para compartilhar.", "Público"),
             ("🤖", "verificarbot", "Verifica se um bot possui a flag oficial do Discord.", "Público"),
             ("🎮", "jogar", "Chama pessoas para jogar com cooldown individual.", "Público"),
             ("<a:Trofeu1:1512192550088212481>", "rank", "Ranking de mensagens por período.", "Público"),
@@ -524,13 +527,49 @@ class Engagement(commands.Cog):
         self.bot = bot
         self.badges_cache = {}
         self.tag_reminder_locks = {}
+        self.profiles = ProfileService()
+        self.profile_render_slots = asyncio.Semaphore(2)
         self.load_badges_from_db()
         if not self.supporter_tag_check_loop.is_running():
             self.supporter_tag_check_loop.start()
+        self.profile_voice_activity_loop.start()
 
     def cog_unload(self):
         if self.supporter_tag_check_loop.is_running():
             self.supporter_tag_check_loop.cancel()
+        self.profile_voice_activity_loop.cancel()
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        if (message.guild and is_allowed_guild(message.guild.id) and not message.author.bot
+                and message.channel.id == CHAT_COUNT_CHANNEL_ID):
+            await self.profiles.record_activity(message.author)
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        if (not member.bot and is_allowed_guild(member.guild.id) and after.channel
+                and after.channel != member.guild.afk_channel):
+            await self.profiles.record_activity(member)
+
+    @tasks.loop(minutes=5)
+    async def profile_voice_activity_loop(self):
+        for guild in self.bot.guilds:
+            if not is_allowed_guild(guild.id):
+                continue
+            for channel in [*guild.voice_channels, *guild.stage_channels]:
+                if channel == guild.afk_channel:
+                    continue
+                for member in channel.members:
+                    if not member.bot:
+                        await self.profiles.record_activity(member)
+
+    @profile_voice_activity_loop.before_loop
+    async def before_profile_voice_activity_loop(self):
+        await self.bot.wait_until_ready()
+
+    @profile_voice_activity_loop.error
+    async def profile_voice_activity_loop_error(self, error):
+        log.error("profile_voice_activity_failed error_type=%s", type(error).__name__)
 
     def load_badges_from_db(self):
         try:
@@ -818,6 +857,24 @@ class Engagement(commands.Cog):
                 await ctx.send("❌ Não consegui carregar as informações do usuário.", ephemeral=True)
             else:
                 await ctx.send("❌ Não consegui carregar as informações do usuário.")
+
+    @app_commands.command(name="perfil", description="Veja seu cartão do Café com suas conquistas e estatísticas.")
+    @app_commands.guild_only()
+    @app_commands.checks.cooldown(1, 20, key=lambda it: (it.guild_id, it.user.id))
+    @app_commands.describe(
+        tema="Tema salvo para seu perfil", sobre="Sua descrição (até 100 caracteres; envie um espaço para limpar)",
+        publico="Compartilhar o cartão no canal; por padrão, só você vê",
+    )
+    @app_commands.choices(tema=[
+        app_commands.Choice(name="Café", value="cafe"),
+        app_commands.Choice(name="Sakura", value="sakura"),
+        app_commands.Choice(name="Meia-noite", value="midnight"),
+    ])
+    async def perfil(self, it: discord.Interaction, tema: app_commands.Choice[str] = None,
+                     sobre: str = None, publico: bool = False):
+        from .commands.perfil_command import execute
+
+        await execute(self, it, tema=tema, sobre=sobre, publico=publico)
 
     @app_commands.command(name="verificarbot", description="Verifica se um bot possui a flag oficial de verificado.")
     @app_commands.describe(id="ID do usuário ou bot que será verificado")

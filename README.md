@@ -23,6 +23,24 @@ main areas are:
 - update broadcasts and user notification preferences;
 - Clash Royale account and clan utilities.
 
+## Member Profile
+
+`/perfil` generates your own server card with ten original café badges, verified
+achievement progress, chat points, weighted voice ranking hours, VIP, team and
+economy balances. It is private by default; use `publico:True` to share it.
+Set `tema` (Café, Sakura or Meia-noite) and `sobre` (up to 100 characters) in the
+same command. The buttons explain achievements and let you feature up to three
+unlocked badges. All settings belong to the requesting member and server.
+
+After deploying the feature, run `!sync` in each authorized server. Ship the
+`assets/profile/` directory with the Python code; its fonts include their original
+license. No image-generation service or additional dependency is required.
+
+For achievement criteria, data limitations and operations, see
+[Member Profile](docs/MEMBER_PROFILE.md). Generate a local, offline design preview
+with `python scripts/preview_profile.py`; output stays under the ignored
+`scripts/output/` directory.
+
 ## Supporter Tag Reminders
 
 Administrators, the bot owner and members with the full-access role can run

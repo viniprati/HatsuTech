@@ -8,6 +8,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
+from pymongo import ReturnDocument
 
 from version import __version__
 
@@ -215,11 +216,18 @@ class SecurityBot(commands.Bot):
             return
 
         if data.get("end_time") and now > data.get("end_time"):
-            await asyncio.to_thread(
-                event_col.update_one,
-                {"_id": data.get("_id", "config")},
-                {"$set": {"active": False, "last_event_scores": data.get("current_scores", {}).copy()}},
+            # Archive persisted scores atomically; routing-cache scores are stale.
+            closed = await asyncio.to_thread(
+                event_col.find_one_and_update,
+                {"_id": data.get("_id", "config"), "active": True,
+                 "end_time": {"$gt": 0, "$lte": now}, "channel_id": message.channel.id},
+                [{"$set": {"active": False, "last_event_scores": {"$ifNull": ["$current_scores", {}]}}}],
+                return_document=ReturnDocument.AFTER,
             )
+            if closed:
+                from cogs.engagement.profile_service import record_event_achievements
+
+                await record_event_achievements(message.guild, closed.get("last_event_scores", {}), source="event_expiry")
             self.event_cache.pop(message.channel.id, None)
             return
 

@@ -290,6 +290,7 @@ eco_logs_col = ResilientCollection("eco_logs")
 eco_admin_logs_col = ResilientCollection("eco_admin_logs")
 eco_vip_transactions_col = ResilientCollection("eco_vip_transactions")
 admin_audit_logs_col = ResilientCollection("admin_audit_logs")
+profiles_col = ResilientCollection("member_profiles")
 
 
 def _initialize_indexes():
@@ -298,6 +299,9 @@ def _initialize_indexes():
         if db is None and not _ensure_connection():
             return
         specs = {
+            "member_profiles": [
+                ([("guild_id", 1), ("user_id", 1)], "member_profiles_guild_user"),
+            ],
             "vip_roles": [
                 ([("guild_id", 1)], "vip_roles_guild_id"),
                 ([("user_id", 1)], "vip_roles_user_id"),

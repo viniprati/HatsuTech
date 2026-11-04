@@ -7,6 +7,13 @@ arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- comando `/perfil` com cartão próprio do servidor, dez insígnias vetoriais
+  originais, conquistas verificáveis e progresso, temas Café/Sakura/Meia-noite,
+  descrição e até três destaques; privado por padrão, com compartilhamento opcional;
+- persistência de conquistas e de até sete dias distintos de participação, sem
+  armazenar conteúdo de mensagens; vencedores são registrados ao encerrar eventos;
+- prévia local offline do perfil e reconstrução dos SVGs/PNGs por geometria
+  compartilhada, usando fontes empacotadas com licença;
 - relatório administrativo por DM para PRATI e Renk em cada exclusão de cargo
   VIP pessoal ou destaque realizada pelo bot, incluindo saída/banimento,
   inatividade, perda de elegibilidade e exclusão pelo painel do dono;
@@ -21,6 +28,8 @@ arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- encerramento dos eventos arquiva os pontos atuais de forma atômica para
+  conceder a conquista ao vencedor correto, incluindo empates;
 - exclusão de cargos VIP pessoais e destaques Monarch após dez dias sem atividade
   observada do dono, incluindo cargos personalizados vinculados manualmente;
 - mensagens em qualquer canal, reações, comandos, botões, formulários e atividade
