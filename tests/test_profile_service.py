@@ -44,6 +44,17 @@ class ProfileServiceTests(unittest.TestCase):
         self.assertIsNone(result["chat_points"])
         self.cols["profiles_col"].update_one.assert_not_called()
 
+    def test_reconnection_does_not_erase_an_earlier_read_failure(self):
+        self.cols["msg_col"].find_one.return_value = None  # Wrapper's failed-read fallback.
+        self.cols["voice_col"].find_one.return_value = {"time": 1000 * 3600}
+        # Global status has already recovered when checked, but its failure marker changed.
+        with patch.object(service, "is_db_online", return_value=True), patch.object(service, "get_db_failure_generation", side_effect=[3, 3, 4]):
+            result = service.ProfileService.read_profile(self.facts, "reconnected")
+        self.assertFalse(result["data_available"])
+        self.assertIsNone(result["chat_points"])
+        self.assertIsNone(result["voice_seconds"])
+        self.cols["profiles_col"].update_one.assert_not_called()
+
     def test_awards_use_atomic_earliest_time_and_separate_profile_scope(self):
         self.cols["msg_col"].find_one.return_value = {"_id": "42", "count": 10000}
         with patch.object(service, "is_db_online", return_value=True):

@@ -28,6 +28,20 @@ _reconnect_lock = threading.Lock()
 _index_lock = threading.Lock()
 _index_initialization_started = False
 _indexes_initialized = False
+_failure_generation = 0
+_failure_generation_lock = threading.Lock()
+
+
+def _note_db_failure():
+    global _failure_generation
+    with _failure_generation_lock:
+        _failure_generation += 1
+
+
+def get_db_failure_generation() -> int:
+    """Monotonic failure marker: reconnecting must not erase a request's failure."""
+    with _failure_generation_lock:
+        return _failure_generation
 
 
 class _NullCursor:
@@ -148,6 +162,8 @@ def _default_for_method(method_name: str):
 
 def _set_online_status(is_online: bool, reason: str | None = None):
     global _db_online, _last_offline_reason
+    if not is_online:
+        _note_db_failure()
     if _db_online == is_online:
         if not is_online and reason and reason != _last_offline_reason:
             _last_offline_reason = reason
@@ -246,6 +262,7 @@ class ResilientCollection:
         def safe_method(*args, **kwargs):
             col = self._get_collection()
             if col is None:
+                _note_db_failure()
                 return _default_for_method(method_name)
             try:
                 method = getattr(col, method_name)

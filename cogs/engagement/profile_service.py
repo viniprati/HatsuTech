@@ -9,7 +9,7 @@ import math
 
 from config import MAIN_GUILD_ID
 from database import (
-    eco_users_col, event_col, guilds_col, is_db_online, msg_col,
+    eco_users_col, event_col, get_db_failure_generation, guilds_col, is_db_online, msg_col,
     profiles_col, voice_col,
 )
 from utils import BOT_OWNER_ID, BRT, get_data_guild_id
@@ -83,8 +83,9 @@ class ProfileService:
     def read_profile(facts: dict, request_id: str) -> dict:
         """Called in a worker thread; never create economy records just to read."""
         key = f"{facts['guild_id']}:{facts['user_id']}"
+        initial_failures = get_db_failure_generation()
         stored = profiles_col.find_one({"_id": key}) or {}
-        online = is_db_online()
+        online = is_db_online() and get_db_failure_generation() == initial_failures
         chat = voice = economy = team = None
         events = []
         if online:
@@ -96,7 +97,7 @@ class ProfileService:
                 team = guilds_col.find_one({"members.user_id": {"$in": [int(uid), uid]}})
                 events = [event_col.find_one({"_id": config}) or {} for config in ("config", "config2")]
             economy = eco_users_col.find_one({"_id": f"{gid}:{uid}"}) or {"guild_id": gid, "user_id": uid}
-            online = is_db_online()
+            online = is_db_online() and get_db_failure_generation() == initial_failures
         profile = build_profile(
             facts, chat_doc=chat, voice_doc=voice, economy_doc=economy,
             guild_doc=team, profile_doc=stored, event_docs=events,
