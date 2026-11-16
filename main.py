@@ -306,7 +306,7 @@ class SecurityBot(commands.Bot):
             ALLOWED_GUILD_IDS,
         )
         await self._leave_unauthorized_guilds()
-        await self.change_presence(activity=discord.Game(name="Minecraft .gg/animescafe"))
+        await self.change_presence(activity=discord.Game(name="DeadCells \n .gg/animescafe"))
 
     async def on_command_error(self, ctx, error):
         if isinstance(error, commands.CommandNotFound):
