@@ -247,7 +247,7 @@ def format_guild_bonus_label(bonus: dict) -> str:
     guild_name = guild_data.get("name", "Guilda")
     guild_emoji = guild_data.get("emoji", "🏰")
     monthly_xp = int(bonus.get("monthly_xp", 0) or 0)
-    return f"{guild_emoji} {guild_name} `+{bonus['percent']}%` • `{monthly_xp:,}` XP mensal".replace(",", ".")
+    return f"{guild_emoji} {guild_name} `+{bonus['percent']}%` para o cofre • `{monthly_xp:,}` XP mensal".replace(",", ".")
 
 
 class AdminResetConfirmView(discord.ui.View):
@@ -1840,35 +1840,20 @@ class EconomySystem(commands.Cog):
 
         self.chat_last_earn[key] = now
         gain = self._economy_gain_amount(message.guild.id)
-        base_rewards = {"eter": gain}
-        guild_bonus = await self._get_member_guild_bonus_async(message.author)
-        bonus = get_member_vip_bonus(message.author)
-        _vip_total, vip_bonus_rewards, vip_remainder_updates = await asyncio.to_thread(
-            self._apply_vip_bonus_to_currency_rewards,
-            message.author.id,
-            message.guild.id,
-            base_rewards,
-            bonus["percent"],
-        )
-        _guild_total, guild_bonus_rewards, guild_remainder_updates = await asyncio.to_thread(
-            self._apply_guild_bonus_to_currency_rewards,
-            message.author.id,
-            message.guild.id,
-            base_rewards,
-            int(guild_bonus.get("percent", 0) or 0),
-        )
-        rewards = self._merge_currency_bonus_rewards(base_rewards, vip_bonus_rewards, guild_bonus_rewards)
-        delivered = int(rewards.get("eter", gain))
-        credited = await asyncio.to_thread(
-            self._credit_user,
-            message.author.id,
-            message.guild.id,
-            {"eter": delivered, "stats.earned_chat": delivered},
-        )
-        if credited:
-            remainder_updates = {**vip_remainder_updates, **guild_remainder_updates}
-            await asyncio.to_thread(self._persist_vip_bonus_remainders, message.author.id, message.guild.id, remainder_updates)
-            await self._credit_guild_activity_xp(message.author, "message", 1)
+        await self._reward_activity(message.author, "message", gain, f"message:{message.id}")
+
+    async def _reward_activity(self, member, source, gain, operation_id):
+        from cogs.guilda.finance import credit_activity, GuildFinanceError
+        from database import TransactionUnavailable
+
+        try:
+            return await asyncio.to_thread(
+                credit_activity, self.bot.get_cog("GuildSystem"), member.guild.id,
+                member.id, source, gain, get_member_vip_bonus(member)["percent"], operation_id,
+            )
+        except (TransactionUnavailable, GuildFinanceError):
+            log.warning("activity_reward_not_confirmed member_id=%s source=%s", member.id, source)
+            return False
 
     def _is_voice_eligible(self, member: discord.Member) -> bool:
         if member.bot or not member.voice or not member.voice.channel:
@@ -1916,35 +1901,7 @@ class EconomySystem(commands.Cog):
                     if now - start >= 10:
                         self.voice_eligible_since[key] = now
                         gain = self._economy_gain_amount(guild.id)
-                        base_rewards = {"eter": gain}
-                        guild_bonus = await self._get_member_guild_bonus_async(member)
-                        bonus = get_member_vip_bonus(member)
-                        _vip_total, vip_bonus_rewards, vip_remainder_updates = await asyncio.to_thread(
-                            self._apply_vip_bonus_to_currency_rewards,
-                            member.id,
-                            guild.id,
-                            base_rewards,
-                            bonus["percent"],
-                        )
-                        _guild_total, guild_bonus_rewards, guild_remainder_updates = await asyncio.to_thread(
-                            self._apply_guild_bonus_to_currency_rewards,
-                            member.id,
-                            guild.id,
-                            base_rewards,
-                            int(guild_bonus.get("percent", 0) or 0),
-                        )
-                        rewards = self._merge_currency_bonus_rewards(base_rewards, vip_bonus_rewards, guild_bonus_rewards)
-                        delivered = int(rewards.get("eter", gain))
-                        credited = await asyncio.to_thread(
-                            self._credit_user,
-                            member.id,
-                            guild.id,
-                            {"eter": delivered, "stats.earned_voice": delivered},
-                        )
-                        if credited:
-                            remainder_updates = {**vip_remainder_updates, **guild_remainder_updates}
-                            await asyncio.to_thread(self._persist_vip_bonus_remainders, member.id, guild.id, remainder_updates)
-                            await self._credit_guild_activity_xp(member, "voice", 1)
+                        await self._reward_activity(member, "voice", gain, f"voice:{guild.id}:{member.id}:{now}")
 
         for key in list(self.voice_eligible_since.keys()):
             if key not in seen_keys:
@@ -1984,10 +1941,10 @@ class EconomySystem(commands.Cog):
         if guild_bonus.get("percent"):
             boost_lines.append(f"{format_guild_bonus_label(guild_bonus)}")
         if boost_lines:
-            total_percent = int(vip_bonus.get("percent", 0) or 0) + int(guild_bonus.get("percent", 0) or 0)
+            total_percent = int(vip_bonus.get("percent", 0) or 0)
             embed.add_field(
                 name="Boosts de Eter",
-                value="\n".join(boost_lines + [f"Total em chat/call: `+{total_percent}%`"]),
+                value="\n".join(boost_lines + [f"Bônus pessoal em chat/call: `+{total_percent}%`"]),
                 inline=False,
             )
         return embed

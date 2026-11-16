@@ -9,6 +9,8 @@ import certifi
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
+from pymongo.read_concern import ReadConcern
+from pymongo.write_concern import WriteConcern
 
 load_dotenv(Path(__file__).resolve().with_name(".env"))
 load_dotenv(Path.home() / ".env", override=False)
@@ -260,6 +262,12 @@ class ResilientCollection:
 
     def __getattr__(self, method_name):
         def safe_method(*args, **kwargs):
+            # Transactions must abort on errors, never convert failed writes or
+            # lazy cursor failures into the degraded-mode defaults.
+            session = kwargs.get("session")
+            if session is not None:
+                col = session.client[MONGO_DB_NAME][self.collection_name]
+                return getattr(col, method_name)(*args, **kwargs)
             col = self._get_collection()
             if col is None:
                 _note_db_failure()
@@ -280,6 +288,31 @@ class ResilientCollection:
                 return _default_for_method(method_name)
 
         return safe_method
+
+
+class TransactionUnavailable(RuntimeError):
+    """A financial operation could not be confirmed atomically."""
+
+
+def run_transaction(callback):
+    """Run a synchronous, retryable DB-only callback on the shared client.
+
+    No Discord calls or other external side effects may occur in callback.
+    Session-bound resilient collections deliberately propagate driver errors.
+    Standalone MongoDB deployments fail closed: no non-atomic fallback.
+    """
+    if not _ensure_connection() or client is None:
+        raise TransactionUnavailable("Banco indisponível para confirmar a operação.")
+    try:
+        with client.start_session() as session:
+            return session.with_transaction(
+                callback, read_concern=ReadConcern("snapshot"),
+                write_concern=WriteConcern("majority"), max_commit_time_ms=10000,
+            )
+    except (PyMongoError, OSError) as error:
+        _note_db_failure()
+        log.warning("mongodb_transaction_failed error_type=%s", type(error).__name__)
+        raise TransactionUnavailable("Não foi possível confirmar a operação no banco.") from error
 
 
 log.info("mongodb_connecting")
@@ -308,6 +341,8 @@ eco_admin_logs_col = ResilientCollection("eco_admin_logs")
 eco_vip_transactions_col = ResilientCollection("eco_vip_transactions")
 admin_audit_logs_col = ResilientCollection("admin_audit_logs")
 profiles_col = ResilientCollection("member_profiles")
+guild_history_col = ResilientCollection("guild_history")
+guild_reward_receipts_col = ResilientCollection("guild_reward_receipts")
 
 
 def _initialize_indexes():
@@ -316,6 +351,9 @@ def _initialize_indexes():
         if db is None and not _ensure_connection():
             return
         specs = {
+            "guild_history": [
+                ([("guild_id", 1), ("updated_at", -1)], "guild_history_guild_updated"),
+            ],
             "member_profiles": [
                 ([("guild_id", 1), ("user_id", 1)], "member_profiles_guild_user"),
             ],
@@ -367,6 +405,9 @@ def _initialize_indexes():
         for collection_name, indexes in specs.items():
             for keys, name in indexes:
                 db[collection_name].create_index(keys, name=name)
+        db["guild_reward_receipts"].create_index(
+            "created_at", name="guild_reward_receipts_expiry", expireAfterSeconds=7 * 86400,
+        )
         _indexes_initialized = True
         log.info("Indices VIP/temproles/transacoes verificados com sucesso.")
     except Exception as e:

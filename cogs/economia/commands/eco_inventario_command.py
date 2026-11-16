@@ -36,8 +36,8 @@ async def execute(self, interaction: discord.Interaction):
     if guild_bonus.get("percent"):
         boost_lines.append(f"Guilda: {format_guild_bonus_label(guild_bonus)}")
     if boost_lines:
-        total_percent = int(vip_bonus.get("percent", 0) or 0) + int(guild_bonus.get("percent", 0) or 0)
-        boost_lines.append(f"Total em ganhos de chat/call: `+{total_percent}%`")
+        total_percent = int(vip_bonus.get("percent", 0) or 0)
+        boost_lines.append(f"Bônus pessoal em chat/call: `+{total_percent}%`")
         embed.add_field(
             name="Boosts de Eter",
             value="\n".join(boost_lines),

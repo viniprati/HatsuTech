@@ -41,6 +41,25 @@ For achievement criteria, data limitations and operations, see
 with `python scripts/preview_profile.py`; output stays under the ignored
 `scripts/output/` directory.
 
+## Guild Treasury
+
+Creating a guild costs **4,000 Essências**. Existing guilds are not charged.
+The monthly guild bonus now deposits extra Éter into the guild treasury;
+base earnings and VIP bonuses remain personal. The treasury survives season
+changes. `/guilda painel` shows its balance and each member's contributions.
+
+The leader uses `/guilda distribuir` to divide the available balance equally
+among members confirmed present in the server with at least **seven days** in
+the guild, including the leader when eligible. Integer remainders stay in the
+treasury. `/historico_guilda` shows creation fees, daily contributions and
+distributions privately to current guild members; navigation rechecks membership.
+
+Deployment requires a MongoDB replica set or sharded cluster with transaction
+support, including MongoDB Atlas. Standalone MongoDB is insufficient: financial
+operations and activity rewards stop rather than partially committing. Run
+`!sync` in each authorized server after deployment. See
+[Guild Treasury](docs/GUILD_TREASURY.md) for operational details and local tests.
+
 ## Supporter Tag Reminders
 
 Administrators, the bot owner and members with the full-access role can run

@@ -9,6 +9,8 @@ import asyncio
 
 
 from database import guilds_col
+from database import TransactionUnavailable
+from . import finance
 
 
 from utils import DISCORD_EMBED_DESCRIPTION_LIMIT, ensure_guild_interaction, get_brt_keys, has_full_access, truncate_discord_text
@@ -77,38 +79,24 @@ class GuildInviteView(ui.View):
     async def accept(self, interaction: discord.Interaction, button: ui.Button):
         if interaction.user.id != self.target_user.id:
             return await interaction.response.send_message("Este convite não é para você.", ephemeral=True)
-
-        current_guild = guilds_col.find_one({"_id": self.guild_data["_id"]})
+        await interaction.response.defer()
+        current_guild = await asyncio.to_thread(guilds_col.find_one, {"_id": self.guild_data["_id"]})
         if not current_guild:
-            return await interaction.response.send_message("❌ Esta guilda não existe mais.", ephemeral=True)
-
-        active_members = await self.cog.get_active_member_records(interaction.guild, current_guild)
-        if len(active_members) >= 10:
-            return await interaction.response.send_message("❌ A guilda lotou nesses 3 minutos!", ephemeral=True)
-
-        if guilds_col.find_one({"members.user_id": interaction.user.id}):
-            return await interaction.response.send_message("❌ Você já está em uma guilda.", ephemeral=True)
-
-        new_member = {
-            "user_id": interaction.user.id,
-            "joined_at": datetime.datetime.now(),
-            "xp": 0,
-            "msg_count": 0,
-            "voice_minutes": 0,
-            "voice_seconds": 0,
-            "message_xp": 0,
-            "voice_xp": 0,
-        }
-
-        guilds_col.update_one(
-            {"_id": self.guild_data["_id"]},
-            {"$push": {"members": new_member}}
-        )
+            return await interaction.followup.send("Não consegui localizar a guilda agora.", ephemeral=True)
+        from .commands.distribuir_command import resolve_present_ids
+        try:
+            active_ids = await resolve_present_ids(interaction.guild, current_guild.get("members", []))
+            await asyncio.to_thread(
+                finance.join_guild, interaction.guild.id, current_guild["_id"], interaction.user.id,
+                current_guild.get("members", []), active_ids,
+            )
+        except (finance.GuildFinanceError, TransactionUnavailable) as error:
+            return await interaction.followup.send(str(error), ephemeral=True)
 
         self.value = True
         for child in self.children: child.disabled = True
 
-        await interaction.response.edit_message(content=f"🎉 **{interaction.user.mention}** agora faz parte da guilda **{current_guild['name']}**!", view=self)
+        await interaction.edit_original_response(content=f"🎉 **{interaction.user.mention}** agora faz parte da guilda **{current_guild['name']}**!", view=self)
 
     @ui.button(label="Recusar", style=discord.ButtonStyle.red, emoji="✖️")
     async def decline(self, interaction: discord.Interaction, button: ui.Button):
@@ -137,10 +125,14 @@ class GuildConfirmDelete(ui.View):
         if self.require_admin and not has_full_access(interaction.user) and not interaction.permissions.administrator:
             return await interaction.response.send_message("Você não tem mais permissão para excluir guildas.", ephemeral=True)
         await interaction.response.defer()
-        result = await asyncio.to_thread(guilds_col.delete_one, {"_id": self.guild_id})
-        if not getattr(result, "acknowledged", False):
-            return await interaction.followup.send("Não consegui confirmar a exclusão no banco. Tente novamente.", ephemeral=True)
-        if not result.deleted_count:
+        try:
+            deleted = await asyncio.to_thread(
+                finance.delete_guild, interaction.guild.id, self.guild_id, interaction.user.id,
+                f"delete:{interaction.id}", admin=self.require_admin,
+            )
+        except (finance.GuildFinanceError, TransactionUnavailable) as error:
+            return await interaction.followup.send(str(error), ephemeral=True)
+        if not deleted:
             return await interaction.edit_original_response(content="A guilda já não está cadastrada.", view=None, embed=None)
         await interaction.edit_original_response(content="🗑️ Guilda excluída do banco de dados.", view=None, embed=None)
 
@@ -363,7 +355,7 @@ class GuildSystem(commands.Cog):
         percent = self.monthly_boost_percent(monthly_xp)
         next_tier = self.next_monthly_boost_tier(monthly_xp)
         lines = [
-            f"Boost de Eter pessoal: `+{percent}%`",
+            f"Depósito extra no cofre: `+{percent}%`",
         ]
         if next_tier:
             threshold, next_percent = next_tier
@@ -445,8 +437,12 @@ class GuildSystem(commands.Cog):
     def _ensure_current_period_stats(self, guild_data: dict) -> dict:
         sets = self._reset_period_stats_if_needed(guild_data)
         if sets:
-            guilds_col.update_one({"_id": guild_data["_id"]}, {"$set": sets})
-            guild_data = {**guild_data, **sets}
+            for field, value in sets.items():
+                guilds_col.update_one(
+                    {"_id": guild_data["_id"], f"{field}.key": {"$ne": value["key"]}},
+                    {"$set": {field: value}},
+                )
+            guild_data = guilds_col.find_one({"_id": guild_data["_id"]}) or {**guild_data, **sets}
         return guild_data
 
     def _ranking_value(self, guild_data: dict, periodo: str, tipo: str) -> int:
@@ -482,7 +478,7 @@ class GuildSystem(commands.Cog):
 
     guilda = app_commands.Group(name="guilda", description="Sistema de Guildas")
 
-    @guilda.command(name="criar", description="Cria uma nova guilda (Você será o líder).")
+    @guilda.command(name="criar", description="Cria uma guilda por 4.000 Essências (você será o líder).")
     async def criar(self, it: discord.Interaction, nome: str, emoji: str):
         from .commands.criar_command import execute
 
@@ -555,6 +551,22 @@ class GuildSystem(commands.Cog):
         from .commands.kick_command import execute
 
         await execute(self, it, membro)
+
+    @guilda.command(name="distribuir", description="Divide o cofre entre membros presentes com sete dias de guilda (líder).")
+    @app_commands.guild_only()
+    @app_commands.checks.cooldown(1, 10, key=lambda it: (it.guild_id, it.user.id))
+    async def distribuir(self, it: discord.Interaction):
+        from .commands.distribuir_command import execute
+
+        await execute(self, it)
+
+    @app_commands.command(name="historico_guilda", description="Consulta em privado os movimentos do cofre da sua guilda.")
+    @app_commands.guild_only()
+    @app_commands.checks.cooldown(1, 10, key=lambda it: (it.guild_id, it.user.id))
+    async def historico_guilda(self, it: discord.Interaction):
+        from .commands.historico_guilda_command import execute
+
+        await execute(self, it)
 
 
 

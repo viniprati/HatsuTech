@@ -45,7 +45,37 @@ jobs:
         run: |
           python -m compileall -q main.py config.py database.py utils.py version.py cogs scripts tests
 
-      - name: Run unit tests
+      - name: Start local MongoDB replica set
+        run: |
+          docker run --detach --name hatsutech-test-mongo \
+            --publish 127.0.0.1:27019:27019 \
+            mongo:8.0 --replSet hatsutech-test --port 27019 --bind_ip_all
+          python - <<'PY'
+          import time
+          from pymongo import MongoClient
+          from pymongo.errors import PyMongoError
+
+          direct = MongoClient(host="127.0.0.1", port=27019, directConnection=True, serverSelectionTimeoutMS=1000)
+          for attempt in range(30):
+              try:
+                  direct.admin.command("ping")
+                  break
+              except PyMongoError:
+                  if attempt == 29:
+                      raise
+                  time.sleep(1)
+          direct.admin.command("replSetInitiate", {
+              "_id": "hatsutech-test", "members": [{"_id": 0, "host": "127.0.0.1:27019"}],
+          })
+          direct.close()
+          replica = MongoClient(host="127.0.0.1", port=27019, replicaSet="hatsutech-test", serverSelectionTimeoutMS=30000)
+          replica.admin.command("ping")
+          replica.close()
+          PY
+
+      - name: Run unit and financial integration tests
+        env:
+          HATSUTECH_TEST_MONGO_PORT: "27019"
         run: |
           python -m unittest discover -s tests -v
 

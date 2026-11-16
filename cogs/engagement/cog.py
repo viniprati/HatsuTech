@@ -108,7 +108,7 @@ HELP_DATA = {
         "description": "Criação, painel, convites e ranking de guildas.",
         "color": discord.Color.dark_teal(),
         "commands": [
-            ("<:sword:1512194684045496380>", "guilda criar", "Cria uma nova guilda.", "Público"),
+            ("<:sword:1512194684045496380>", "guilda criar", "Cria uma guilda por 4.000 Essências.", "Público"),
             ("📋", "guilda painel", "Mostra status e membros da guilda.", "Público"),
             ("✉️", "guilda convidar", "Convida alguém para sua guilda.", "Líder"),
             ("🚪", "guilda sair", "Sai da guilda atual.", "Público"),
@@ -117,6 +117,8 @@ HELP_DATA = {
             ("✨", "guilda editar_emoji", "Altera o ícone da guilda.", "Líder"),
             ("<a:Trofeu1:1512192550088212481>", "guilda ranking", "Mostra o top 10 guildas por geral, semanal, mensal, mensagens ou call.", "Público"),
             ("👢", "guilda kick", "Remove um membro da guilda.", "Líder"),
+            ("🏦", "guilda distribuir", "Divide o cofre entre membros presentes com sete dias de guilda.", "Líder"),
+            ("📜", "historico_guilda", "Histórico privado de criação, depósitos e distribuições da própria guilda.", "Integrante"),
         ]
     },
     "clash": {

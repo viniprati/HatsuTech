@@ -182,9 +182,11 @@ async def _build_eco_help_embeds(self, guild: discord.Guild) -> dict[str, discor
             f"- `+15%` no {format_currency_label('eter')} ganho por mensagem/call.\n"
             "- `+15%` nas moedas recebidas ao abrir lootboxes.\n\n"
             "**Boost de Guilda**\n"
-            "- A temporada mensal de guildas desbloqueia bônus no Eter pessoal dos membros.\n"
+            "- A temporada mensal de guildas desbloqueia depósitos extras de Eter no cofre da guilda.\n"
             "- Metas: `50k = +5%`, `60k = +10%`, `75k = +15%`, `90k = +20%`, `100k = +25%`.\n"
-            "- Esse bônus soma com o VIP apenas nos ganhos de mensagem/call."
+            "- O VIP continua pessoal; o bônus de guilda vai ao cofre nos ganhos de mensagem/call.\n"
+            "- O líder usa `/guilda distribuir` para dividir igualmente entre membros presentes com sete dias de guilda.\n"
+            "- Consulte `/historico_guilda` para ver os movimentos em privado."
         ),
         color=discord.Color.dark_embed(),
     )
