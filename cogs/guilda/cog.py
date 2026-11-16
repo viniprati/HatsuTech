@@ -560,6 +560,14 @@ class GuildSystem(commands.Cog):
 
         await execute(self, it)
 
+    @app_commands.command(name="guilda_cofre", description="Veja em privado o saldo do cofre da sua própria guilda.")
+    @app_commands.guild_only()
+    @app_commands.checks.cooldown(1, 10, key=lambda it: (it.guild_id, it.user.id))
+    async def guilda_cofre(self, it: discord.Interaction):
+        from .commands.guilda_cofre_command import execute
+
+        await execute(self, it)
+
     @app_commands.command(name="historico_guilda", description="Consulta em privado os movimentos do cofre da sua guilda.")
     @app_commands.guild_only()
     @app_commands.checks.cooldown(1, 10, key=lambda it: (it.guild_id, it.user.id))

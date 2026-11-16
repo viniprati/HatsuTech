@@ -38,6 +38,12 @@
 
 ## History and privacy
 
+`/guilda_cofre` shows the treasury total and the requesting member's contribution
+in an ephemeral response. It has no arbitrary guild selector: only current
+members can consult their own guild's treasury. Both successful replies and
+errors remain private. The public `/guilda painel` contains activity/XP only,
+without treasury balances or financial contribution amounts.
+
 `/historico_guilda` has no arbitrary guild selector. Any current member can open
 the history of their own guild in an ephemeral response. It shows the latest
 100 financial movements, five per page. Each navigation revalidates both the
@@ -64,7 +70,7 @@ receipts remain in history and use the Discord interaction ID for idempotency.
    the transaction. No additional client or dependency is introduced in bot code.
 2. The MongoDB account must be allowed to transact, write the two new collections
    and create their indexes. Verify startup index initialization succeeds.
-3. Run `!sync` in each authorized server to register `/guilda distribuir` and
+3. Run `!sync` in each authorized server to register `/guilda_cofre`, `/guilda distribuir` and
    `/historico_guilda` and update the creation-command description.
 4. Existing documents need no bulk migration. Treasury fields initialize lazily.
 
