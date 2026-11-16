@@ -46,7 +46,9 @@ with `python scripts/preview_profile.py`; output stays under the ignored
 Creating a guild costs **4,000 Essências**. Existing guilds are not charged.
 The monthly guild bonus now deposits extra Éter into the guild treasury;
 base earnings and VIP bonuses remain personal. The treasury survives season
-changes. `/guilda painel` shows its balance and each member's contributions.
+changes. `/guilda_cofre` shows its balance and your contribution privately to
+members of your own guild. The public `/guilda painel` shows activity statistics
+without treasury balances or financial contributions.
 
 The leader uses `/guilda distribuir` to divide the available balance equally
 among members confirmed present in the server with at least **seven days** in

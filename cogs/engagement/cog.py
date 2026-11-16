@@ -118,6 +118,7 @@ HELP_DATA = {
             ("<a:Trofeu1:1512192550088212481>", "guilda ranking", "Mostra o top 10 guildas por geral, semanal, mensal, mensagens ou call.", "Público"),
             ("👢", "guilda kick", "Remove um membro da guilda.", "Líder"),
             ("🏦", "guilda distribuir", "Divide o cofre entre membros presentes com sete dias de guilda.", "Líder"),
+            ("🔐", "guilda_cofre", "Consulta privada do saldo do cofre da própria guilda.", "Integrante"),
             ("📜", "historico_guilda", "Histórico privado de criação, depósitos e distribuições da própria guilda.", "Integrante"),
         ]
     },

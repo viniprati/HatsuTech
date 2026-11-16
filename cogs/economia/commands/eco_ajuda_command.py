@@ -186,6 +186,7 @@ async def _build_eco_help_embeds(self, guild: discord.Guild) -> dict[str, discor
             "- Metas: `50k = +5%`, `60k = +10%`, `75k = +15%`, `90k = +20%`, `100k = +25%`.\n"
             "- O VIP continua pessoal; o bônus de guilda vai ao cofre nos ganhos de mensagem/call.\n"
             "- O líder usa `/guilda distribuir` para dividir igualmente entre membros presentes com sete dias de guilda.\n"
+            "- Consulte o saldo em `/guilda_cofre`, visível só para você e restrito à sua guilda.\n"
             "- Consulte `/historico_guilda` para ver os movimentos em privado."
         ),
         color=discord.Color.dark_embed(),

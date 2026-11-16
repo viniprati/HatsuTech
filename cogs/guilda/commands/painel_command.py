@@ -36,7 +36,6 @@ async def execute(self, it: discord.Interaction, usuario: discord.Member = None)
         f"💬 **Mensagens:** {monthly_message_xp:,} XP\n"
         f"🎙️ **Call:** {monthly_voice_xp:,} XP\n"
         f"{self.format_monthly_boost_summary(runtime_data)}\n"
-        f"🏦 **Cofre:** {int(runtime_data.get('treasury_eter', 0)):,} Éteres\n"
         f"📚 **XP Histórico:** {runtime_data.get('total_xp', 0):,}\n"
         f"👑 **Líder:** {runtime_data['_leader_text']}\n\n"
     ).replace(",", ".")
@@ -58,8 +57,7 @@ async def execute(self, it: discord.Interaction, usuario: discord.Member = None)
         if uid == guild_data['leader_id']:
             line += " 👑"
 
-        contribution = int(m.get("treasury_contributed", 0))
-        stats = f"└ 🗣️ `{msgs} msgs` | 🎙️ `{time_str}` | ✨ `{xp} XP` | 🏦 `{contribution} Éteres`"
+        stats = f"└ 🗣️ `{msgs} msgs` | 🎙️ `{time_str}` | ✨ `{xp} XP`"
         desc += f"{line}\n{stats}\n"
 
     if not members_sorted:
@@ -71,6 +69,6 @@ async def execute(self, it: discord.Interaction, usuario: discord.Member = None)
         description=desc,
         color=discord.Color.gold()
     )
-    embed.set_footer(text=f"Membros presentes: {len(members_sorted)}/10 • Divisão: /guilda distribuir • Histórico privado: /historico_guilda")
+    embed.set_footer(text=f"Membros presentes: {len(members_sorted)}/10 • Cofre privado: /guilda_cofre • Histórico privado: /historico_guilda")
 
     await it.followup.send(embed=embed)

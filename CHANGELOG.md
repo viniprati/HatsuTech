@@ -31,6 +31,9 @@ arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- saldo do cofre e contribuições financeiras removidos do painel público de
+  guildas; `/guilda_cofre` permite consultar saldo e contribuição própria em
+  resposta ephemeral, restrita aos integrantes da própria guilda;
 - criação de guildas custa 4.000 Essências; o bônus mensal de guilda acumula Éter
   no cofre, mantendo ganhos base e VIP pessoais; operações financeiras usam
   transações MongoDB e exclusões são bloqueadas enquanto houver saldo no cofre;
