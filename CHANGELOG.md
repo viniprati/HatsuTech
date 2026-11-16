@@ -7,6 +7,9 @@ arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- cofre persistente de guilda, distribuição igualitária pelo líder para membros
+  presentes com pelo menos sete dias de guilda e `/historico_guilda` privado,
+  com contribuições diárias e comprovantes de distribuição;
 - comando `/perfil` com cartão próprio do servidor, dez insígnias vetoriais
   originais, conquistas verificáveis e progresso, temas Café/Sakura/Meia-noite,
   descrição e até três destaques; privado por padrão, com compartilhamento opcional;
@@ -28,6 +31,9 @@ arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- criação de guildas custa 4.000 Essências; o bônus mensal de guilda acumula Éter
+  no cofre, mantendo ganhos base e VIP pessoais; operações financeiras usam
+  transações MongoDB e exclusões são bloqueadas enquanto houver saldo no cofre;
 - encerramento dos eventos arquiva os pontos atuais de forma atômica para
   conceder a conquista ao vencedor correto, incluindo empates;
 - exclusão de cargos VIP pessoais e destaques Monarch após dez dias sem atividade

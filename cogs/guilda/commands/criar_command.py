@@ -1,43 +1,23 @@
 from __future__ import annotations
-from ..cog import *
+
+import asyncio
+import discord
+
+from database import TransactionUnavailable
+from utils import ensure_guild_interaction
+from ..finance import create_guild, GuildFinanceError
 
 
 async def execute(self, it: discord.Interaction, nome: str, emoji: str):
     if not await ensure_guild_interaction(it, "o comando /guilda criar"):
         return
-
-    nome = nome.strip()
-    emoji = emoji.strip()
-    if not nome or len(nome) > 20:
-        return await it.response.send_message("❌ Nome muito longo (máx 20 chars).", ephemeral=True)
-    if len(emoji) > 50:
-        return await it.response.send_message("❌ Emoji inválido ou muito longo.", ephemeral=True)
-
-    if self.get_user_guild(it.user.id):
-        return await it.response.send_message("❌ Você já está em uma guilda! Saia primeiro.", ephemeral=True)
-
-    if guilds_col.find_one({"name": nome}):
-        return await it.response.send_message("❌ Já existe uma guilda com esse nome.", ephemeral=True)
-
-    guild_doc = {
-        "name": nome,
-        "emoji": emoji,
-        "leader_id": it.user.id,
-        "created_at": datetime.datetime.now(),
-        "total_xp": 0,
-        "members": [
-            {
-                "user_id": it.user.id,
-                "joined_at": datetime.datetime.now(),
-                "xp": 0,
-                "msg_count": 0,
-                "voice_minutes": 0,
-                "voice_seconds": 0,
-                "message_xp": 0,
-                "voice_xp": 0
-            }
-        ]
-    }
-
-    guilds_col.insert_one(guild_doc)
-    await it.response.send_message(f"✅ Guilda **{emoji} {nome}** criada com sucesso!", ephemeral=True)
+    await it.response.defer(ephemeral=True)
+    try:
+        await asyncio.to_thread(create_guild, it.guild.id, it.user.id, nome, emoji, f"create:{it.id}")
+    except (GuildFinanceError, TransactionUnavailable) as error:
+        return await it.followup.send(str(error), ephemeral=True)
+    await it.followup.send(
+        f"✅ Guilda **{discord.utils.escape_markdown(emoji.strip())} {discord.utils.escape_markdown(nome.strip())}** criada! "
+        "Taxa de **4.000 Essências** descontada. O bônus de guilda será acumulado no cofre.",
+        ephemeral=True, allowed_mentions=discord.AllowedMentions.none(),
+    )
