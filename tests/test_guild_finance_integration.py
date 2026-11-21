@@ -18,7 +18,7 @@ from pymongo import MongoClient
 from pymongo.errors import OperationFailure
 
 import database
-from cogs.guilda import finance
+from cogs.guilda import finance, membership
 from cogs.guilda.cog import GuildSystem
 from utils import get_brt_keys
 
@@ -32,6 +32,18 @@ if not TEST_URI and os.getenv("HATSUTECH_TEST_MONGO_PORT"):
 
 @unittest.skipUnless(TEST_URI, "Requires an explicit local MongoDB replica set")
 class GuildFinanceIntegrationTests(unittest.TestCase):
+    def test_departure_transfers_leadership_and_preserves_xp_and_treasury(self):
+        doc = self.team([{"user_id": "1"}, {"user_id": 2, "joined_at": self.now}], balance=123)
+        snapshots = membership.read_memberships(1)
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(membership.remove_departed(snapshots[0], {1}, {2}), 1)
+        updated = self.db.guilds.find_one({"_id": doc["_id"]})
+        self.assertEqual(updated["leader_id"], 2)
+        self.assertEqual([record["user_id"] for record in updated["members"]], [2])
+        self.assertEqual(updated["total_xp"], doc["total_xp"])
+        self.assertEqual(updated["treasury_eter"], 123)
+        self.assertEqual(membership.remove_departed(snapshots[0], {1}, {2}), 0)
+
     @classmethod
     def setUpClass(cls):
         if urlparse(TEST_URI).hostname not in {"127.0.0.1", "localhost", "::1"}:

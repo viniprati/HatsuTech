@@ -7,6 +7,8 @@ arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- remoção automática de integrantes que saem do servidor principal, com
+  revisão dos registros antigos e sucessão de liderança quando possível;
 - cofre persistente de guilda, distribuição igualitária pelo líder para membros
   presentes com pelo menos sete dias de guilda e `/historico_guilda` privado,
   com contribuições diárias e comprovantes de distribuição;

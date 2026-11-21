@@ -100,7 +100,7 @@ def create_guild(server_id, actor_id, name, emoji, operation_id):
     return run_transaction(execute)
 
 
-def join_guild(server_id, guild_id, user_id, expected_members, active_ids):
+def join_guild(server_id, guild_id, user_id, expected_members, active_ids, *, inviter_id=None):
     now = datetime.now(timezone.utc)
 
     def execute(session):
@@ -109,6 +109,8 @@ def join_guild(server_id, guild_id, user_id, expected_members, active_ids):
         if not document:
             raise GuildFinanceError("Esta guilda não existe mais.")
         check_scope(document, server_id)
+        if inviter_id is not None and (int(document.get("leader_id") or 0) != inviter_id or inviter_id not in active_ids):
+            raise GuildFinanceError("O convite não é mais válido. Peça um novo convite ao líder atual.")
         if membership_signature(document.get("members", [])) != membership_signature(expected_members):
             raise GuildFinanceError("Os membros mudaram. Peça um novo convite.")
         if len(set(member_ids(document)) & set(active_ids)) >= 10:

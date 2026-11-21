@@ -6,11 +6,12 @@ import datetime
 import logging
 import re
 import asyncio
+import aiohttp
 
 
 from database import guilds_col
 from database import TransactionUnavailable
-from . import finance
+from . import finance, membership
 
 
 from utils import DISCORD_EMBED_DESCRIPTION_LIMIT, ensure_guild_interaction, get_brt_keys, has_full_access, truncate_discord_text
@@ -88,7 +89,7 @@ class GuildInviteView(ui.View):
             active_ids = await resolve_present_ids(interaction.guild, current_guild.get("members", []))
             await asyncio.to_thread(
                 finance.join_guild, interaction.guild.id, current_guild["_id"], interaction.user.id,
-                current_guild.get("members", []), active_ids,
+                current_guild.get("members", []), active_ids, inviter_id=self.inviter.id,
             )
         except (finance.GuildFinanceError, TransactionUnavailable) as error:
             return await interaction.followup.send(str(error), ephemeral=True)
@@ -161,7 +162,10 @@ class GuildIconSelect(ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         chosen_emoji = self.values[0]
-        guilds_col.update_one({"_id": self.guild_id}, {"$set": {"emoji": chosen_emoji}})
+        result = await asyncio.to_thread(guilds_col.update_one,
+            {"_id": self.guild_id, "leader_id": interaction.user.id}, {"$set": {"emoji": chosen_emoji}})
+        if not result.acknowledged or not result.matched_count:
+            return await interaction.response.send_message("Só o líder atual pode alterar o ícone. Se você for o líder, tente novamente.", ephemeral=True)
         await interaction.response.edit_message(content=f"✅ O ícone da guilda foi atualizado para {chosen_emoji}!", view=None, embed=None)
 
 class GuildIconCustomModal(ui.Modal, title="Ícone Personalizado"):
@@ -182,7 +186,10 @@ class GuildIconCustomModal(ui.Modal, title="Ícone Personalizado"):
             if not emoji_obj:
                 return await interaction.response.send_message("❌ Esse emoji deve pertencer a este servidor (o bot precisa vê-lo).", ephemeral=True)
 
-        guilds_col.update_one({"_id": self.guild_id}, {"$set": {"emoji": novo_emoji}})
+        result = await asyncio.to_thread(guilds_col.update_one,
+            {"_id": self.guild_id, "leader_id": interaction.user.id}, {"$set": {"emoji": novo_emoji}})
+        if not result.acknowledged or not result.matched_count:
+            return await interaction.response.send_message("Só o líder atual pode alterar o ícone. Se você for o líder, tente novamente.", ephemeral=True)
         await interaction.response.send_message(f"✅ Ícone personalizado atualizado para {novo_emoji}!", ephemeral=True)
 
 class GuildIconView(ui.View):
@@ -264,14 +271,75 @@ class GuildSystem(commands.Cog):
         self._cd = commands.CooldownMapping.from_cooldown(1, MSG_COOLDOWN, commands.BucketType.user)
         if not GUILD_XP_FROM_ECONOMY_ONLY:
             self.voice_xp_loop.start()
+        self.reconcile_departed_members.start()
 
     def cog_unload(self):
+        self.reconcile_departed_members.cancel()
         if self.voice_xp_loop.is_running():
             self.voice_xp_loop.cancel()
 
 
     def get_user_guild(self, user_id):
-        return guilds_col.find_one({"members.user_id": user_id})
+        return guilds_col.find_one({"members.user_id": {"$in": [user_id, str(user_id)]}})
+
+    async def _reconcile_memberships(self, guild, departed_user_id=None):
+        snapshots = await asyncio.to_thread(membership.read_memberships, departed_user_id)
+        statuses = {}
+        for snapshot in snapshots:
+            try:
+                member_ids = set(finance.member_ids(snapshot))
+                leader_id = int(snapshot.get("leader_id") or 0)
+                if departed_user_id is not None and leader_id != departed_user_id:
+                    member_ids &= {departed_user_id}
+                for user_id in sorted(member_ids):
+                    if user_id in statuses:
+                        continue
+                    cached = guild.get_member(user_id)
+                    if cached is not None and user_id != departed_user_id:
+                        statuses[user_id] = "present" if not cached.bot else "unknown"
+                        continue
+                    try:
+                        member = await guild.fetch_member(user_id)
+                    except discord.NotFound as error:
+                        statuses[user_id] = "absent" if error.code == 10007 else "unknown"
+                    except discord.HTTPException as error:
+                        log.warning("guild_membership_check_interrupted status=%s", error.status)
+                        return
+                    except (aiohttp.ClientError, OSError, TimeoutError) as error:
+                        log.warning("guild_membership_check_failed error_type=%s", type(error).__name__)
+                        return
+                    else:
+                        statuses[user_id] = "present" if not member.bot else "unknown"
+                    await asyncio.sleep(0.25)
+                absent = {uid for uid in member_ids if statuses[uid] == "absent" and guild.get_member(uid) is None}
+                present = {uid for uid in member_ids if statuses[uid] == "present"}
+                if absent:
+                    removed = await asyncio.to_thread(membership.remove_departed, snapshot, absent, present)
+                    if removed:
+                        log.info("guild_departures_removed guild_id=%s count=%s", snapshot["_id"], removed)
+            except TransactionUnavailable:
+                log.warning("guild_departure_cleanup_db_unavailable")
+                return
+            except (KeyError, TypeError, ValueError):
+                log.warning("guild_departure_cleanup_invalid_record guild_id=%s", snapshot.get("_id"))
+
+    @commands.Cog.listener()
+    async def on_raw_member_remove(self, payload: discord.RawMemberRemoveEvent):
+        if payload.guild_id != finance.MAIN_GUILD_ID or payload.user.bot:
+            return
+        guild = self.bot.get_guild(payload.guild_id)
+        if guild is not None and not guild.unavailable:
+            await self._reconcile_memberships(guild, payload.user.id)
+
+    @tasks.loop(hours=1)
+    async def reconcile_departed_members(self):
+        guild = self.bot.get_guild(finance.MAIN_GUILD_ID)
+        if guild is not None and not guild.unavailable:
+            await self._reconcile_memberships(guild)
+
+    @reconcile_departed_members.before_loop
+    async def before_reconcile_departed_members(self):
+        await self.bot.wait_until_ready()
 
     async def get_guild_member_safe(self, guild: discord.Guild, user_id):
         try:
