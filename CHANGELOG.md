@@ -5,6 +5,8 @@ arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-21
+
 ### Added
 
 - remoção automática de integrantes que saem do servidor principal, com
@@ -112,3 +114,4 @@ Primeira versao de codigo formalmente identificada e publicada na branch
 [1.0.3]: https://github.com/viniprati/HatsuTech/compare/a8fa647...v1.0.3
 [1.0.4]: https://github.com/viniprati/HatsuTech/compare/v1.0.3...v1.0.4
 [1.1.0]: https://github.com/viniprati/HatsuTech/compare/v1.0.4...v1.1.0
+[1.2.1]: https://github.com/viniprati/HatsuTech/compare/99210aa...b433ba7
