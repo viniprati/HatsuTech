@@ -192,7 +192,7 @@ async def open_common_panel(self, it, cor_primaria: str = None, cor_secundaria: 
 
         await it.followup.send(
             embed=discord.Embed(title=f"💎 Painel VIP: {role.name}", color=role.color),
-            view=VipMainView(self, role, limit),
+            view=VipMainView(self, role),
             ephemeral=True
         )
         if position_note:

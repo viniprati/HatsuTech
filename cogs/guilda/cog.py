@@ -628,6 +628,13 @@ class GuildSystem(commands.Cog):
 
         await execute(self, it)
 
+    @guilda.command(name="vagas", description="Consulte o preço e compre uma vaga extra para a sua guilda (líder).")
+    @app_commands.guild_only()
+    async def vagas(self, it: discord.Interaction):
+        from .commands.vagas_command import execute
+
+        await execute(it)
+
     @app_commands.command(name="guilda_cofre", description="Veja em privado o saldo do cofre da sua própria guilda.")
     @app_commands.guild_only()
     @app_commands.checks.cooldown(1, 10, key=lambda it: (it.guild_id, it.user.id))

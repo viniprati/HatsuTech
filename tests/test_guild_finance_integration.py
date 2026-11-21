@@ -18,6 +18,7 @@ from pymongo import MongoClient
 from pymongo.errors import OperationFailure
 
 import database
+from cogs.economia import slot_upgrades
 from cogs.guilda import finance, membership
 from cogs.guilda.cog import GuildSystem
 from utils import get_brt_keys
@@ -85,6 +86,51 @@ class GuildFinanceIntegrationTests(unittest.TestCase):
         return finance.distribute(self.server, doc["_id"], actor, doc["members"],
                                   set(finance.member_ids(doc)) if present is None else present,
                                   operation_id, now=self.now)
+
+    def test_guild_slots_charge_progressively_allow_extra_member_and_expire_on_deletion(self):
+        self.user(essencia=12_000)
+        doc = self.team([{"user_id": uid} for uid in range(1, 11)])
+        target = doc["_id"]
+        with self.assertRaises(finance.GuildFinanceError):
+            finance.join_guild(self.server, target, 11, doc["members"], set(range(1, 11)))
+        self.assertEqual(slot_upgrades.buy_slot("guild", self.server, 1, target, 0, "one"), (2000, 1))
+        self.assertEqual(slot_upgrades.buy_slot("guild", self.server, 1, target, 0, "one"), (2000, 1))
+        with self.assertRaises(slot_upgrades.SlotPurchaseError):
+            slot_upgrades.buy_slot("guild", self.server, 1, target, 0, "stale")
+        finance.join_guild(self.server, target, 11, doc["members"], set(range(1, 11)))
+        self.assertEqual(slot_upgrades.buy_slot("guild", self.server, 1, target, 1, "two"), (2500, 2))
+        finance.delete_guild(self.server, target, 1, "delete:slots")
+        recreated = finance.create_guild(self.server, 1, "Nova", "🛡️", "create:slots")
+        self.assertEqual(slot_upgrades.guild_capacity(self.db.guilds.find_one({"_id": recreated})), 10)
+        self.assertEqual(self.db.eco_users.find_one()["essencia"], 3500)
+
+    def test_vip_slots_are_bound_to_role_id_and_check_owner_and_funds(self):
+        self.user(essencia=3000)
+        self.user(2, essencia=5000)
+        target = f"{self.server}:1"
+        self.db.vip_roles.insert_one({"_id": target, "user_id": "1", "guild_id": str(self.server),
+                                      "role_id": "101", "status": "active"})
+        with self.assertRaises(slot_upgrades.SlotPurchaseError):
+            slot_upgrades.buy_slot("vip", self.server, 2, target, 0, "wrong_owner", role_id=101)
+        self.assertEqual(slot_upgrades.buy_slot("vip", self.server, 1, target, 0, "vip1", role_id=101), (1000, 1))
+        self.assertEqual(slot_upgrades.buy_slot("vip", self.server, 1, target, 1, "vip2", role_id=101), (1250, 2))
+        self.db.vip_roles.update_one({"_id": target}, {"$set": {"role_id": "102"}})
+        doc = self.db.vip_roles.find_one({"_id": target})
+        self.assertEqual(slot_upgrades.vip_extras(doc, 102), 0)
+        with self.assertRaises(slot_upgrades.SlotPurchaseError):
+            slot_upgrades.buy_slot("vip", self.server, 1, target, 2, "deleted_role", role_id=101)
+        with self.assertRaises(slot_upgrades.SlotPurchaseError):
+            slot_upgrades.buy_slot("vip", self.server, 1, target, 0, "insufficient", role_id=102)
+        self.assertEqual(self.db.eco_users.find_one({"_id": finance.economy_id(self.server, 1)})["essencia"], 750)
+
+    def test_slot_purchase_rolls_back_if_receipt_write_fails(self):
+        self.user(essencia=5000)
+        doc = self.team()
+        with patch.object(slot_upgrades.eco_logs_col, "insert_one", side_effect=OperationFailure("injected failure")):
+            with self.assertRaises(database.TransactionUnavailable):
+                slot_upgrades.buy_slot("guild", self.server, 1, doc["_id"], 0, "rollback")
+        self.assertEqual(self.db.eco_users.find_one()["essencia"], 5000)
+        self.assertEqual(slot_upgrades.guild_capacity(self.db.guilds.find_one()), 10)
 
     def test_creation_charges_exact_fee_once_and_preserves_existing_balance(self):
         self.user(essencia=5000, eter=20)
