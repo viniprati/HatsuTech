@@ -2,7 +2,7 @@
 
 HatsuTech is a Discord bot built for the Animes Cafe community.
 
-Current version: `1.1.0`. See [CHANGELOG.md](CHANGELOG.md)
+Current version: `1.2.1`. See [CHANGELOG.md](CHANGELOG.md)
 for the version history.
 
 The project brings together moderation, engagement, internal economy, ranks,
