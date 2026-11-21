@@ -35,6 +35,13 @@
 - Both leader and administrative deletion refuse a guild with any whole Éter
   left in its treasury. This also applies to division remainders.
 - Leaving/kicking a member does not subtract XP or whole Éter previously earned.
+- The bot also removes guild memberships when Discord confirms someone left the
+  main server. It checks on departure events, on startup and hourly to catch
+  older records. A failed lookup leaves the membership for a later check.
+- When the leader leaves, the oldest remaining member confirmed present takes
+  over. If there are unverified candidates and nobody confirmed present, the
+  transfer waits for a later check. Empty guilds keep their record, XP and
+  treasury for administrative handling, with no assigned leader.
 
 ## History and privacy
 
