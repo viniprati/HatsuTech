@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from admin_audit import send_admin_audit_dm
 from database import is_db_online, vip_col, vip_recovery_logs_col, vip_role_presets_col, temp_col
+from cogs.economia.slot_upgrades import vip_extras
 
 
 from utils import (
@@ -290,21 +291,51 @@ class VipColorModal(ui.Modal, title="Mudar Cor"):
             return await interaction.response.send_message("❌ Não foi possível atualizar as cores do cargo.", ephemeral=True)
 
 class VipMemberSelect(ui.UserSelect):
-    def __init__(self, role, limit):
+    def __init__(self, cog, role):
         super().__init__(placeholder="➕ Adicionar membros...", min_values=1, max_values=25)
-        self.role = role; self.limit = limit
+        self.cog = cog
+        self.role = role
+
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        if (len(self.role.members) + len(self.values)) > self.limit:
-            return await interaction.followup.send("🚫 Limite excedido.", ephemeral=True)
         added = []
-        for m in self.values:
-            if self.role not in m.roles:
+        async with self.cog._get_vip_lock(interaction.user.id, interaction.guild_id):
+            role = interaction.guild.get_role(self.role.id)
+            limit = await self.cog.get_bound_vip_limit(interaction, role)
+            if limit is None:
+                return await interaction.followup.send("Seu cargo VIP pessoal não está disponível.", ephemeral=True)
+            occupied = {member.id for member in role.members}
+            pending = self.cog._vip_recent_additions.get(role.id, set()) - occupied
+            confirmed_pending = set()
+            # A previous REST add can finish before the gateway updates role.members.
+            for user_id in pending:
                 try:
-                    await m.add_roles(self.role)
-                    added.append(m.mention)
-                except: pass
-        await interaction.followup.send(f"✅ Adicionado: {', '.join(added)}" if added else "Ninguém novo.", ephemeral=True)
+                    member = await interaction.guild.fetch_member(user_id)
+                except discord.NotFound:
+                    continue
+                except discord.HTTPException:
+                    return await interaction.followup.send("Não consegui conferir as vagas agora. Tente novamente.", ephemeral=True)
+                if role in member.roles:
+                    confirmed_pending.add(user_id)
+            occupied.update(confirmed_pending)
+            if confirmed_pending:
+                self.cog._vip_recent_additions[role.id] = confirmed_pending
+            else:
+                self.cog._vip_recent_additions.pop(role.id, None)
+            additions = [member for member in self.values if isinstance(member, discord.Member)
+                         and not member.bot and member.id not in occupied]
+            if len(occupied) + len(additions) > limit:
+                return await interaction.followup.send("🚫 Limite excedido. Consulte `/vip_vagas`.", ephemeral=True)
+            for member in additions:
+                try:
+                    await member.add_roles(role, reason="VIP pessoal: inclusão pelo dono")
+                except discord.HTTPException:
+                    log.warning("vip_panel_member_add_failed role_id=%s", role.id)
+                    continue
+                self.cog._vip_recent_additions.setdefault(role.id, set()).add(member.id)
+                added.append(member.mention)
+        await interaction.followup.send(f"✅ Adicionado: {', '.join(added)}" if added else "Ninguém novo.",
+                                        ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 class VipMemberRemoveSelect(ui.UserSelect):
     def __init__(self, cog, role):
@@ -326,16 +357,16 @@ class VipMemberRemoveSelect(ui.UserSelect):
         await interaction.followup.send(msg, ephemeral=True)
 
 class VipMembersView(ui.View):
-    def __init__(self, cog, role, limit):
+    def __init__(self, cog, role):
         super().__init__(timeout=None)
-        self.add_item(VipMemberSelect(role, limit))
+        self.add_item(VipMemberSelect(cog, role))
         self.add_item(VipMemberRemoveSelect(cog, role))
 
 
 class VipMainView(ui.View):
-    def __init__(self, cog, role, limit):
+    def __init__(self, cog, role):
         super().__init__(timeout=None)
-        self.cog = cog; self.bot = cog.bot; self.role = role; self.limit = limit
+        self.cog = cog; self.bot = cog.bot; self.role = role
         self._mentionable_state = bool(role.mentionable)
         self._sync_mention_button()
 
@@ -388,14 +419,16 @@ class VipMainView(ui.View):
 
     @ui.button(label="Membros", style=discord.ButtonStyle.success, row=1)
     async def manage(self, it, b):
-        if not await self._ensure_owner_binding(it):
-            return
+        await it.response.defer(ephemeral=True, thinking=True)
+        limit = await self.cog.get_bound_vip_limit(it, self.role)
+        if limit is None:
+            return await it.followup.send("Seu cargo VIP pessoal não está disponível.", ephemeral=True)
         members = self.role.members
         desc = "\n".join([f"`{i:02d}.` {m.mention}" for i, m in enumerate(members, 1)]) if members else "Ninguem."
         desc = truncate_discord_text(desc, DISCORD_EMBED_DESCRIPTION_LIMIT, "\n[conteudo truncado]")
         embed = discord.Embed(title=f"Membros VIP: {self.role.name}", description=desc, color=self.role.color)
-        embed.set_footer(text=f"Vagas: {len(members)} / {self.limit}")
-        await it.response.send_message(embed=embed, view=VipMembersView(self.cog, self.role, self.limit), ephemeral=True)
+        embed.set_footer(text=f"Vagas: {len(members)} / {limit} • /vip_vagas")
+        await it.followup.send(embed=embed, view=VipMembersView(self.cog, self.role), ephemeral=True)
 
     @ui.button(label="Notificar", style=discord.ButtonStyle.secondary, row=1)
     async def ping_role(self, it, b):
@@ -863,6 +896,7 @@ class VipSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._vip_locks = {}
+        self._vip_recent_additions = {}
         self._manual_vip_member_removals = {}
         self._common_vip_owners = {}
         self._common_vip_activity_written = {}
@@ -895,6 +929,20 @@ class VipSystem(commands.Cog):
         for vid, max_m in VIP_CONFIG.items():
             if any(r.id == vid for r in member.roles) and max_m > limit: limit = max_m
         return limit
+
+    async def get_bound_vip_limit(self, interaction, role):
+        if (not interaction.guild or not self._is_vip_eligible(interaction.user)
+                or not self._is_personal_vip_role(role) or role.is_default()
+                or not bot_can_manage_role(interaction.guild, role)):
+            return None
+        data = await self._get_vip_doc(interaction.guild, interaction.user.id)
+        if not data or data.get("status") == "inactive" or _to_int_or_none(data.get("role_id")) != role.id:
+            return None
+        return self.get_vip_limit(interaction.user) + vip_extras(data, role.id)
+
+    @commands.Cog.listener()
+    async def on_guild_role_delete(self, role):
+        self._vip_recent_additions.pop(role.id, None)
 
     def is_monarch(self, member):
         return any(r.id == MONARCH_VIP_ID for r in member.roles) or has_full_access(member)
@@ -1857,6 +1905,13 @@ class VipSystem(commands.Cog):
         from .commands.vip_command import execute
 
         await execute(self, it, cor_primaria, cor_secundaria)
+
+    @app_commands.command(name="vip_vagas", description="Consulte o preço e compre uma vaga extra para seu cargo VIP pessoal.")
+    @app_commands.guild_only()
+    async def vip_vagas(self, it: discord.Interaction):
+        from .commands.vip_vagas_command import execute
+
+        await execute(self, it)
 
     @app_commands.command(name="vincular_vip", description="Admin: Vincula cargo VIP.")
     @check_owner_or_perm(manage_roles=True)

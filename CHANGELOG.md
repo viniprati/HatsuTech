@@ -9,6 +9,8 @@ arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 
 - remoção automática de integrantes que saem do servidor principal, com
   revisão dos registros antigos e sucessão de liderança quando possível;
+- compra de vagas extras com Essências em `/guilda vagas` e `/vip_vagas`, com
+  preço progressivo, confirmação privada e perda das vagas sem reembolso em caso de exclusão;
 - cofre persistente de guilda, distribuição igualitária pelo líder para membros
   presentes com pelo menos sete dias de guilda e `/historico_guilda` privado,
   com contribuições diárias e comprovantes de distribuição;

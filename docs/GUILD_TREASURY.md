@@ -43,6 +43,19 @@
   transfer waits for a later check. Empty guilds keep their record, XP and
   treasury for administrative handling, with no assigned leader.
 
+## Extra member slots
+
+Guild leaders can use `/guilda vagas` to add one member slot at a time. The
+first slot costs 2,000 Essências from the leader's wallet. Each slot already
+purchased raises the next price by 500 Essências. The base guild capacity is
+10. Deleting the guild discards all purchased slots without refunds.
+
+Owners of active personal VIP roles can use `/vip_vagas` to add one member
+slot at a time. The first slot costs 1,000 Essências and each purchased slot
+raises the next price by 250 Essências. Upgrades apply only to the purchased
+role ID. A role recreated from a preset starts at the base VIP limit. The
+new commands require `!sync` after deployment.
+
 ## History and privacy
 
 `/guilda_cofre` shows the treasury total and the requesting member's contribution

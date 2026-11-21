@@ -1,5 +1,6 @@
 from __future__ import annotations
 from ..cog import *
+from cogs.economia.slot_upgrades import guild_capacity
 
 
 async def execute(self, it: discord.Interaction, usuario: discord.Member = None):
@@ -69,6 +70,6 @@ async def execute(self, it: discord.Interaction, usuario: discord.Member = None)
         description=desc,
         color=discord.Color.gold()
     )
-    embed.set_footer(text=f"Membros presentes: {len(members_sorted)}/10 • Cofre privado: /guilda_cofre • Histórico privado: /historico_guilda")
+    embed.set_footer(text=f"Membros presentes: {len(members_sorted)}/{guild_capacity(guild_data)} • Cofre privado: /guilda_cofre • Histórico privado: /historico_guilda")
 
     await it.followup.send(embed=embed)

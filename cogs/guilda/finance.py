@@ -12,6 +12,7 @@ from bson import ObjectId
 from config import MAIN_GUILD_ID
 from database import eco_users_col, guild_history_col, guild_reward_receipts_col, guilds_col, run_transaction
 from utils import BRT, get_data_guild_id
+from cogs.economia.slot_upgrades import guild_capacity
 
 CREATION_FEE = 4_000
 MIN_MEMBERSHIP_DAYS = 7
@@ -113,8 +114,9 @@ def join_guild(server_id, guild_id, user_id, expected_members, active_ids, *, in
             raise GuildFinanceError("O convite não é mais válido. Peça um novo convite ao líder atual.")
         if membership_signature(document.get("members", [])) != membership_signature(expected_members):
             raise GuildFinanceError("Os membros mudaram. Peça um novo convite.")
-        if len(set(member_ids(document)) & set(active_ids)) >= 10:
-            raise GuildFinanceError("A guilda já tem dez membros presentes no servidor.")
+        limit = guild_capacity(document)
+        if len(set(member_ids(document)) & set(active_ids)) >= limit:
+            raise GuildFinanceError(f"A guilda atingiu seu limite de {limit} membros presentes.")
         if guilds_col.find_one({"members.user_id": {"$in": [user_id, str(user_id)]}}, session=session):
             raise GuildFinanceError("Você já está em uma guilda.")
         guilds_col.update_one({"_id": guild_id}, {"$push": {"members": {

@@ -4,7 +4,7 @@ import asyncio
 import discord
 
 from database import TransactionUnavailable
-from utils import ensure_guild_interaction
+from utils import ensure_guild_interaction, truncate_discord_text
 from .. import finance
 
 
@@ -43,7 +43,7 @@ async def execute(self, it: discord.Interaction):
         )
     except (finance.GuildFinanceError, TransactionUnavailable) as error:
         return await it.followup.send(str(error), ephemeral=True)
-    recipients = ", ".join(f"<@{uid}>" for uid in result["recipients"])
+    recipients = truncate_discord_text(", ".join(f"<@{uid}>" for uid in result["recipients"]), 3600)
     embed = discord.Embed(
         title="Cofre distribuído", color=discord.Color.green(),
         description=(f"**{result['amount']:,} Éteres** distribuídos igualmente.\n"

@@ -99,6 +99,7 @@ HELP_DATA = {
         "color": discord.Color.purple(),
         "commands": [
             ("<:Vip_Berserk:1351063519684202549>", "vip", "Abre o painel para cargo comum e cargo destaque.", "VIP"),
+            ("💎", "vip_vagas", "Consulta e compra uma vaga extra para seu cargo VIP pessoal.", "Dono do cargo"),
             ("📢", "notificar", "Envia uma notificação para o cargo do seu VIP.", "VIP"),
         ]
     },
@@ -118,6 +119,7 @@ HELP_DATA = {
             ("<a:Trofeu1:1512192550088212481>", "guilda ranking", "Mostra o top 10 guildas por geral, semanal, mensal, mensagens ou call.", "Público"),
             ("👢", "guilda kick", "Remove um membro da guilda.", "Líder"),
             ("🏦", "guilda distribuir", "Divide o cofre entre membros presentes com sete dias de guilda.", "Líder"),
+            ("➕", "guilda vagas", "Consulta e compra uma vaga extra para a guilda.", "Líder"),
             ("🔐", "guilda_cofre", "Consulta privada do saldo do cofre da própria guilda.", "Integrante"),
             ("📜", "historico_guilda", "Histórico privado de criação, depósitos e distribuições da própria guilda.", "Integrante"),
         ]
