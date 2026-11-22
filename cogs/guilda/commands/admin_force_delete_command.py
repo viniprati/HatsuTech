@@ -23,7 +23,8 @@ async def execute(self, it: discord.Interaction, alvo: discord.Member):
 
     embed = discord.Embed(
         title="🚨 EXCLUSÃO ADMINISTRATIVA FORÇADA",
-        description="Você está prestes a **APAGAR PERMANENTEMENTE** a guilda abaixo.\nEsta ação não pode ser desfeita e todo o XP será perdido.",
+        description=("Você está prestes a **APAGAR PERMANENTEMENTE** a guilda abaixo.\n"
+                     "O XP, as vagas extras e as Essências restantes na reserva de vagas serão perdidos sem reembolso."),
         color=discord.Color.dark_red()
     )
 

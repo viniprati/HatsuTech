@@ -46,9 +46,17 @@
 ## Extra member slots
 
 Guild leaders can use `/guilda vagas` to add one member slot at a time. The
-first slot costs 2,000 Essências from the leader's wallet. Each slot already
-purchased raises the next price by 500 Essências. The base guild capacity is
-10. Deleting the guild discards all purchased slots without refunds.
+first slot costs 2,000 Essências. Each slot already purchased raises the next
+price by 500 Essências. The base guild capacity is 10.
+
+Members contribute from their own wallets using `/guilda doar_essencias`.
+The bot spends the guild's Essence reserve first and charges the leader's
+wallet for the remainder. The confirmation shows the maximum personal debit.
+If the combined funds are insufficient, the purchase leaves both balances
+unchanged. `/guilda_cofre` shows the reserve privately and `/historico_guilda`
+records donations and purchases. Donations are final and the reserve can only
+fund slot purchases. Deleting the guild discards slots and remaining donated
+Essências without refunds. The Éter treasury follows its own rules.
 
 Owners of active personal VIP roles can use `/vip_vagas` to add one member
 slot at a time. The first slot costs 1,000 Essências and each purchased slot

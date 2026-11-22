@@ -635,6 +635,14 @@ class GuildSystem(commands.Cog):
 
         await execute(it)
 
+    @guilda.command(name="doar_essencias", description="Doe Essências da sua carteira para vagas da guilda. A doação é definitiva.")
+    @app_commands.guild_only()
+    @app_commands.describe(quantidade="Essências a doar para a reserva de vagas")
+    async def doar_essencias(self, it: discord.Interaction, quantidade: app_commands.Range[int, 1]):
+        from .commands.doar_essencias_command import execute
+
+        await execute(it, quantidade)
+
     @app_commands.command(name="guilda_cofre", description="Veja em privado o saldo do cofre da sua própria guilda.")
     @app_commands.guild_only()
     @app_commands.checks.cooldown(1, 10, key=lambda it: (it.guild_id, it.user.id))

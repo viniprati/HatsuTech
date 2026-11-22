@@ -120,6 +120,7 @@ HELP_DATA = {
             ("👢", "guilda kick", "Remove um membro da guilda.", "Líder"),
             ("🏦", "guilda distribuir", "Divide o cofre entre membros presentes com sete dias de guilda.", "Líder"),
             ("➕", "guilda vagas", "Consulta e compra uma vaga extra para a guilda.", "Líder"),
+            ("💎", "guilda doar_essencias", "Doa Essências para a reserva de compra de vagas.", "Integrante"),
             ("🔐", "guilda_cofre", "Consulta privada do saldo do cofre da própria guilda.", "Integrante"),
             ("📜", "historico_guilda", "Histórico privado de criação, depósitos e distribuições da própria guilda.", "Integrante"),
         ]

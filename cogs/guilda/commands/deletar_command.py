@@ -13,7 +13,8 @@ async def execute(self, it: discord.Interaction):
 
     embed = discord.Embed(
         title="⚠️ ATENÇÃO!",
-        description=f"Tem certeza que deseja apagar a guilda **{guild_data['name']}**?\nIsso removerá todos os membros e o XP acumulado.",
+        description=(f"Tem certeza que deseja apagar a guilda **{guild_data['name']}**?\n"
+                     "Isso remove membros, XP e vagas extras. As Essências restantes na reserva de vagas são perdidas sem reembolso."),
         color=discord.Color.red()
     )
     await it.response.send_message(embed=embed, view=GuildConfirmDelete(guild_data["_id"], it.user.id), ephemeral=True)
