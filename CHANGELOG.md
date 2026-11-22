@@ -5,6 +5,11 @@ arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- doações de Essências para a reserva de vagas da guilda. O líder confirma a
+  compra usando primeiro a reserva e complementa com seu saldo pessoal.
+
 ## [1.2.1] - 2026-11-21
 
 ### Added

@@ -51,6 +51,13 @@ class GuildHistoryView(discord.ui.View):
                         f"Receberam: {recipients}\nSobra: **{entry.get('remainder', 0):,} Éteres**")
             elif kind == "creation":
                 title, text = "Criação da guilda", f"{actor} pagou **{entry.get('fee', 0):,} Essências**."
+            elif kind == "slot_donation":
+                title = "Doação para vagas"
+                text = f"{actor} doou **{entry['amount']:,} Essências**.".replace(",", ".")
+            elif kind == "slot_purchase":
+                title = "Compra de vaga extra"
+                text = (f"{actor} comprou uma vaga por **{entry['amount']:,} Essências**.\n"
+                        f"Da reserva: **{entry['from_reserve']:,}** • Da carteira do líder: **{entry['from_personal']:,}**").replace(",", ".")
             else:
                 title, text = "Movimento", "Registro administrativo."
             embed.add_field(name=title, value=truncate_discord_text(f"{when}\n{text}", 1024), inline=False)

@@ -250,6 +250,36 @@ def read_current_guild(server_id, user_id):
     return run_transaction(execute)
 
 
+def donate_slot_essence(server_id, actor_id, amount, operation_id):
+    if type(amount) is not int or not 1 <= amount <= 2**53 - 1:
+        raise GuildFinanceError("Informe uma quantidade inteira de Essências maior que zero.")
+    receipt_id = f"slot_donation:{operation_id}"
+    now = datetime.now(timezone.utc)
+
+    def execute(session):
+        if guild_history_col.find_one({"_id": receipt_id, "actor_id": str(actor_id)}, session=session):
+            return
+        query = {"members.user_id": {"$in": [actor_id, str(actor_id)]}}
+        document = guilds_col.find_one(query, session=session)
+        if not document:
+            raise GuildFinanceError("Você precisa estar em uma guilda para doar.")
+        check_scope(document, server_id)
+
+        charged = eco_users_col.update_one(
+            {"_id": economy_id(server_id, actor_id), "essencia": {"$gte": amount}},
+            {"$inc": {"essencia": -amount}, "$set": {"updated_at": now}}, session=session,
+        )
+        if not charged.matched_count:
+            raise GuildFinanceError("Você não tem Essências suficientes para essa doação.")
+        updated = guilds_col.update_one({"_id": document["_id"], **query},
+                                        {"$inc": {"slot_essence_balance": amount}}, session=session)
+        if updated.modified_count != 1:
+            raise GuildFinanceError("Não consegui registrar a doação. Nenhuma Essência foi debitada.")
+        _record(session, receipt_id, document["_id"], "slot_donation", now, actor_id=str(actor_id), amount=amount)
+
+    run_transaction(execute)
+
+
 def delete_guild(server_id, guild_id, actor_id, operation_id, *, admin=False):
     def execute(session):
         document = guilds_col.find_one({"_id": guild_id}, session=session)
@@ -261,7 +291,8 @@ def delete_guild(server_id, guild_id, actor_id, operation_id, *, admin=False):
         if int(document.get("treasury_eter", 0)) > 0:
             raise GuildFinanceError("Distribua todo o saldo do cofre antes de excluir a guilda. Sobras também precisam ser distribuídas.")
         guilds_col.delete_one({"_id": guild_id}, session=session)
-        _record(session, operation_id, guild_id, "deletion", datetime.now(timezone.utc), actor_id=str(actor_id))
+        _record(session, operation_id, guild_id, "deletion", datetime.now(timezone.utc), actor_id=str(actor_id),
+                discarded_slot_essence=document.get("slot_essence_balance", 0))
         return True
 
     return run_transaction(execute)

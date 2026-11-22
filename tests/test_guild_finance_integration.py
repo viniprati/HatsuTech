@@ -132,6 +132,43 @@ class GuildFinanceIntegrationTests(unittest.TestCase):
         self.assertEqual(self.db.eco_users.find_one()["essencia"], 5000)
         self.assertEqual(slot_upgrades.guild_capacity(self.db.guilds.find_one()), 10)
 
+    def test_member_donations_fund_slots_before_the_leader_wallet(self):
+        doc = self.team([{"user_id": 1}, {"user_id": "2"}], balance=33)
+        self.user(1, essencia=600)
+        self.user(2, essencia=3600)
+        for _ in range(2):
+            finance.donate_slot_essence(self.server, 2, 3600, "donation:once")
+        with self.assertRaises(slot_upgrades.SlotPurchaseError):
+            slot_upgrades.buy_slot("guild", self.server, 2, doc["_id"], 0, "slot:nonleader", max_personal=0)
+        self.assertEqual(slot_upgrades.buy_slot("guild", self.server, 1, doc["_id"], 0, "slot:1", max_personal=0), (2000, 1))
+        with self.assertRaises(slot_upgrades.SlotPurchaseError):
+            slot_upgrades.buy_slot("guild", self.server, 1, doc["_id"], 1, "slot:2", max_personal=900)
+        self.assertEqual(self.db.guilds.find_one()["slot_essence_balance"], 1600)
+        self.db.eco_users.update_one({"_id": finance.economy_id(self.server, 1)}, {"$set": {"essencia": 1200}})
+        with self.assertRaises(slot_upgrades.SlotPurchaseError):
+            slot_upgrades.buy_slot("guild", self.server, 1, doc["_id"], 1, "slot:old-quote", max_personal=799)
+        for _ in range(2):
+            self.assertEqual(slot_upgrades.buy_slot("guild", self.server, 1, doc["_id"], 1, "slot:2", max_personal=900), (2500, 2))
+        updated = self.db.guilds.find_one()
+        self.assertEqual((updated["slot_essence_balance"], updated["treasury_eter"]), (0, 33))
+        self.assertEqual(self.db.eco_users.find_one({"_id": finance.economy_id(self.server, 1)})["essencia"], 300)
+        self.assertEqual(self.db.eco_users.find_one({"_id": finance.economy_id(self.server, 2)})["essencia"], 0)
+        self.assertEqual(self.db.guild_history.count_documents({"type": "slot_donation"}), 1)
+        self.assertEqual(self.db.guild_history.count_documents({"type": "slot_purchase"}), 2)
+
+    def test_failed_donation_leaves_wallet_and_reserve_unchanged(self):
+        self.team()
+        self.user(1, essencia=100)
+        self.user(2, essencia=100)
+        for user_id, amount in ((2, 20), (1, 101), (1, -5)):
+            with self.assertRaises(finance.GuildFinanceError):
+                finance.donate_slot_essence(self.server, user_id, amount, f"invalid:{user_id}:{amount}")
+        with patch.object(finance.guild_history_col, "insert_one", side_effect=OperationFailure("injected failure")):
+            with self.assertRaises(database.TransactionUnavailable):
+                finance.donate_slot_essence(self.server, 1, 20, "rollback:donation")
+        self.assertEqual(self.db.guilds.find_one().get("slot_essence_balance", 0), 0)
+        self.assertEqual(sorted(doc["essencia"] for doc in self.db.eco_users.find()), [100, 100])
+
     def test_creation_charges_exact_fee_once_and_preserves_existing_balance(self):
         self.user(essencia=5000, eter=20)
         gid = finance.create_guild(self.server, 1, "Nova", "🛡️", "create:1")

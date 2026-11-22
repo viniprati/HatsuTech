@@ -83,7 +83,7 @@ HATSUTECH_TEST_MONGO_PORT=27019 python -m unittest discover -s tests -v
 
 Without an explicit test port or `HATSUTECH_TEST_MONGO_URI` (loopback only), the
 integration tests are skipped. CI starts the local replica and runs both suites.
-These tests cover guild treasury operations and paid guild and VIP slot upgrades.
+These tests cover guild treasury operations, slot donations and paid guild and VIP slot upgrades.
 
 When tests, linting or type checking are added later, update this file and the
 CI workflow.

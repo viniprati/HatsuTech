@@ -26,6 +26,9 @@ async def execute(self, it: discord.Interaction):
         description=f"**{name}**\n\nSaldo disponível: **{balance:,} Éteres**".replace(",", "."),
     )
     embed.add_field(name="Sua contribuição", value=f"{contribution:,} Éteres".replace(",", "."), inline=False)
+    essence = f"{document.get('slot_essence_balance', 0):,}".replace(",", ".")
+    embed.add_field(name="Reserva de vagas", value=(f"**{essence} Essências** disponíveis.\n"
+                    "Use `/guilda doar_essencias` para contribuir. O líder compra em `/guilda vagas`."), inline=False)
     embed.add_field(
         name="Como funciona",
         value=("O bônus de guilda acumula neste cofre e o saldo permanece entre as temporadas.\n"
