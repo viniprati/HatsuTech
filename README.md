@@ -112,12 +112,14 @@ required for this behavior; deploy the updated code and allow DMs to both users.
 ## VIP Member Limits
 
 When a personal VIP role exceeds its tier limit plus purchased slots, the bot
-sends a private report to `ADMIN_AUDIT_DM_USER_IDS`. It checks on role assignment
-changes, at startup and every 15 minutes. The report identifies the owner and
-role, the current count, the limit and the excess. It does not attribute the
-change to an administrator or remove members. An excess is reported once per
-bot session until the role returns to its limit. This needs the existing Server
-Members intent and takes effect after deployment without `!sync`.
+sends a private report to `ADMIN_AUDIT_DM_USER_IDS` and a reminder to the role
+owner. The check runs on role assignment changes, at startup and every minute.
+The owner gets a reminder when the excess is detected and every five minutes
+while it continues. If Discord blocks DMs to the owner, the bot stops trying for
+that excess until the role returns to its limit or the bot restarts. Admins
+receive one report per excess in the current bot session. Members can adjust
+the role with `/vip` or buy extra slots with `/vip_vagas`. This needs the
+existing Server Members intent and takes effect after deployment without `!sync`.
 
 ## VIP Inactivity
 

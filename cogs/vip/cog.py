@@ -948,7 +948,7 @@ class VipSystem(commands.Cog):
     @commands.Cog.listener()
     async def on_guild_role_delete(self, role):
         self._vip_recent_additions.pop(role.id, None)
-        self._capacity_alerts.reported.discard(role.id)
+        self._capacity_alerts.clear(role.id)
 
     @commands.Cog.listener("on_member_update")
     async def check_changed_vip_capacity(self, before, after):
@@ -960,7 +960,7 @@ class VipSystem(commands.Cog):
         if role_ids:
             await self._capacity_alerts.check(guild, role_ids)
 
-    @tasks.loop(minutes=15)
+    @tasks.loop(minutes=1)
     async def check_vip_capacity(self):
         for guild in self.bot.guilds:
             if not guild.unavailable and is_allowed_guild(guild.id):

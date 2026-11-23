@@ -8,7 +8,8 @@ arquivo. O projeto segue [Semantic Versioning](https://semver.org/).
 ### Added
 
 - avisos administrativos por DM quando um cargo VIP pessoal passa do limite
-  de membros, incluindo vagas extras, com verificação de excessos existentes.
+  de membros, incluindo vagas extras, com lembretes ao dono a cada cinco
+  minutos enquanto o excesso continuar e verificação de excessos existentes.
 - doações de Essências para a reserva de vagas da guilda. O líder confirma a
   compra usando primeiro a reserva e complementa com seu saldo pessoal.
 

@@ -3,6 +3,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
+
 os.environ["MONGO_URI"] = ""
 
 from cogs.vip import capacity_alerts
@@ -10,7 +12,7 @@ from cogs.vip import capacity_alerts
 
 class VipCapacityAlertTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.owner = SimpleNamespace(id=42, bot=False)
+        self.owner = SimpleNamespace(id=42, bot=False, send=AsyncMock())
         self.role = SimpleNamespace(id=21, name="VIP pessoal", members=list(range(23)), is_default=lambda: False)
         self.guild = SimpleNamespace(id=11, chunked=True, get_role=lambda _: self.role,
                                      get_member=lambda _: self.owner)
@@ -43,6 +45,31 @@ class VipCapacityAlertTests(unittest.IsolatedAsyncioTestCase):
         self.role.members.append(99)
         await self.monitor.check(self.guild, {21})
         self.assertEqual(self.alert.await_count, 2)
+
+    async def test_owner_receives_one_dm_every_five_minutes_during_excess(self):
+        with patch.object(capacity_alerts, "monotonic", side_effect=[100, 399, 400, 401]):
+            await self.monitor.check(self.guild)
+            await self.monitor.check(self.guild, {21})
+            self.owner.send.assert_awaited_once()
+            await self.monitor.check(self.guild)
+            await self.monitor.check(self.guild, {21})
+        self.assertEqual(self.owner.send.await_count, 2)
+        self.alert.assert_awaited_once()
+        payload = self.owner.send.call_args
+        self.assertIn("/vip_vagas", payload.args[0])
+        self.assertFalse(payload.kwargs["allowed_mentions"].users)
+        self.role.members.pop()
+        await self.monitor.check(self.guild)
+        self.assertFalse(self.monitor.owner_reminders)
+        self.assertEqual(self.owner.send.await_count, 2)
+
+    async def test_closed_dm_suppresses_repeated_attempts_for_same_excess(self):
+        self.owner.send.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "DM fechada")
+        with patch.object(capacity_alerts, "monotonic", side_effect=[100, 400]):
+            await self.monitor.check(self.guild)
+            await self.monitor.check(self.guild)
+        self.owner.send.assert_awaited_once()
+        self.alert.assert_awaited_once()
 
     async def test_partial_member_cache_never_resets_existing_alert(self):
         self.guild.chunked = False
