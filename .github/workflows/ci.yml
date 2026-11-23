@@ -73,7 +73,7 @@ jobs:
           replica.close()
           PY
 
-      - name: Run unit tests and MongoDB integration tests for treasury, donations and slot purchases
+      - name: Run unit tests for bot behavior and MongoDB integration tests for finance
         env:
           HATSUTECH_TEST_MONGO_PORT: "27019"
         run: |

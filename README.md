@@ -109,6 +109,18 @@ configured through `ADMIN_AUDIT_DM_USER_IDS`, defaulting to PRATI
 (`983870132063453235`) and Renk (`459064218088374293`). No new slash-command sync is
 required for this behavior; deploy the updated code and allow DMs to both users.
 
+## VIP Member Limits
+
+When a personal VIP role exceeds its tier limit plus purchased slots, the bot
+sends a private report to `ADMIN_AUDIT_DM_USER_IDS` and a reminder to the role
+owner. The check runs on role assignment changes, at startup and every minute.
+The owner gets a reminder when the excess is detected and every minute
+while it continues. If Discord blocks DMs to the owner, the bot stops trying for
+that excess until the role returns to its limit or the bot restarts. Admins
+receive one report per excess in the current bot session. Members can adjust
+the role with `/vip` or buy extra slots with `/vip_vagas`. This needs the
+existing Server Members intent and takes effect after deployment without `!sync`.
+
 ## VIP Inactivity
 
 Personal VIP roles created through `/vip` or linked through `/vincular_vip`, and

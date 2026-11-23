@@ -23,12 +23,14 @@ from utils import (
     process_icon,
     BOT_OWNER_ID,
     has_full_access,
+    is_allowed_guild,
     can_manage_role,
     bot_can_manage_role,
     ensure_db_online,
     ensure_guild_interaction,
     truncate_discord_text,
 )
+from .capacity_alerts import VipCapacityAlerts
 
 log = logging.getLogger(__name__)
 HEX_COLOR_RE = re.compile(r"^[0-9a-fA-F]{6}$")
@@ -897,6 +899,7 @@ class VipSystem(commands.Cog):
         self.bot = bot
         self._vip_locks = {}
         self._vip_recent_additions = {}
+        self._capacity_alerts = VipCapacityAlerts(self, vip_document_user_id)
         self._manual_vip_member_removals = {}
         self._common_vip_owners = {}
         self._common_vip_activity_written = {}
@@ -912,8 +915,10 @@ class VipSystem(commands.Cog):
             self.check_inactive_common_vips.start()
         if not self.check_inactive_monarch_highlights.is_running():
             self.check_inactive_monarch_highlights.start()
+        self.check_vip_capacity.start()
 
     def cog_unload(self):
+        self.check_vip_capacity.cancel()
         if self.check_temproles.is_running():
             self.check_temproles.cancel()
         if self.reconcile_absent_vips.is_running():
@@ -943,6 +948,27 @@ class VipSystem(commands.Cog):
     @commands.Cog.listener()
     async def on_guild_role_delete(self, role):
         self._vip_recent_additions.pop(role.id, None)
+        self._capacity_alerts.clear(role.id)
+
+    @commands.Cog.listener("on_member_update")
+    async def check_changed_vip_capacity(self, before, after):
+        guild = after.guild
+        if guild.unavailable or not is_allowed_guild(guild.id):
+            return
+        changed_roles = set(before.roles) ^ set(after.roles)
+        role_ids = {role.id for role in changed_roles if self._is_personal_vip_role(role) and not role.is_default()}
+        if role_ids:
+            await self._capacity_alerts.check(guild, role_ids)
+
+    @tasks.loop(minutes=1)
+    async def check_vip_capacity(self):
+        for guild in self.bot.guilds:
+            if not guild.unavailable and is_allowed_guild(guild.id):
+                await self._capacity_alerts.check(guild)
+
+    @check_vip_capacity.before_loop
+    async def before_check_vip_capacity(self):
+        await self.bot.wait_until_ready()
 
     def is_monarch(self, member):
         return any(r.id == MONARCH_VIP_ID for r in member.roles) or has_full_access(member)
