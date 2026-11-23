@@ -114,7 +114,7 @@ required for this behavior; deploy the updated code and allow DMs to both users.
 When a personal VIP role exceeds its tier limit plus purchased slots, the bot
 sends a private report to `ADMIN_AUDIT_DM_USER_IDS` and a reminder to the role
 owner. The check runs on role assignment changes, at startup and every minute.
-The owner gets a reminder when the excess is detected and every five minutes
+The owner gets a reminder when the excess is detected and every minute
 while it continues. If Discord blocks DMs to the owner, the bot stops trying for
 that excess until the role returns to its limit or the bot restarts. Admins
 receive one report per excess in the current bot session. Members can adjust

@@ -13,7 +13,7 @@ from cogs.economia.slot_upgrades import vip_extras
 from database import get_db_failure_generation, is_db_online, vip_col
 
 log = logging.getLogger(__name__)
-OWNER_REMINDER_SECONDS = 5 * 60
+OWNER_REMINDER_SECONDS = 60
 
 
 def snowflake_or_none(value):

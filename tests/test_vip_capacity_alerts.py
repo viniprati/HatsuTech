@@ -46,8 +46,8 @@ class VipCapacityAlertTests(unittest.IsolatedAsyncioTestCase):
         await self.monitor.check(self.guild, {21})
         self.assertEqual(self.alert.await_count, 2)
 
-    async def test_owner_receives_one_dm_every_five_minutes_during_excess(self):
-        with patch.object(capacity_alerts, "monotonic", side_effect=[100, 399, 400, 401]):
+    async def test_owner_receives_one_dm_every_minute_during_excess(self):
+        with patch.object(capacity_alerts, "monotonic", side_effect=[100, 159, 160, 161]):
             await self.monitor.check(self.guild)
             await self.monitor.check(self.guild, {21})
             self.owner.send.assert_awaited_once()
@@ -65,7 +65,7 @@ class VipCapacityAlertTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_closed_dm_suppresses_repeated_attempts_for_same_excess(self):
         self.owner.send.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "DM fechada")
-        with patch.object(capacity_alerts, "monotonic", side_effect=[100, 400]):
+        with patch.object(capacity_alerts, "monotonic", side_effect=[100, 160]):
             await self.monitor.check(self.guild)
             await self.monitor.check(self.guild)
         self.owner.send.assert_awaited_once()
